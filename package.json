@@ -1,0 +1,17 @@
+{
+  "name": "pulse-protocol-v1",
+  "version": "1.0.0",
+  "description": "Pulse Protocol V1 — Smart Contract Protocol Repository",
+  "private": true,
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "test:gas": "REPORT_GAS=true hardhat test",
+    "clean": "hardhat clean"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^6.1.2",
+    "@openzeppelin/contracts": "^5.1.0",
+    "hardhat": "^2.29.0"
+  }
+}
