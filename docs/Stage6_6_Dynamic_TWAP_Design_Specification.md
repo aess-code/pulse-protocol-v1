@@ -1,6 +1,6 @@
 # Pulse Protocol V1 Stage 6.6 Dynamic TWAP Design Specification
 
-**Status:** Design Proposal — Security Hardening Extension (Revision 6)  
+**Status:** Design Proposal — Security Hardening Extension (Revision 7 — Engineering Freeze)  
 **Classification:** Stage 6.6 replaces only the Settlement Observation Algorithm. The CSM pricing model, Pulse Index formula, Vault custody, Fee mechanics, Settlement Payout formulas, and Market Lifecycle State Machine are entirely unchanged.
 
 ---
@@ -113,7 +113,9 @@ The following implementations are explicitly prohibited:
 -   Any automated transaction executed every 15 seconds.
 -   Any frontend-triggered timed call.
 
-The correct implementation reconstructs the complete historical slot sequence inside `finaliseTWAP()` using only `slotIndex` arithmetic and the sparse storage of trade events. The finalization loop iterates from slot 0 to the last valid slot, carrying forward the last known index to fill any gaps. This reconstruction is entirely deterministic and requires no external input.
+The correct implementation reconstructs the complete historical slot sequence inside `finaliseTWAP()` using only `slotIndex` arithmetic and **sparse slot state storage**. The contract stores the Pulse Index for each slot that received a trade update in a mapping or packed array keyed by slot index. The finalization loop iterates from slot 0 to the last valid slot, carrying forward the last known index to fill any gaps. This reconstruction is entirely deterministic and requires no external input.
+
+**Critical Implementation Note:** Solidity cannot read historical event logs as a state source. The reconstruction must rely exclusively on on-chain storage written during trades. Events are emitted for off-chain indexing only and must never be used as the source of truth for slot state reconstruction.
 
 **Example:**
 
@@ -189,8 +191,17 @@ The key insight is that the `lockMarket()` caller cannot manipulate `T_stop` if 
 3.  **Combined Entropy:** `T_stop = (endTime - 15 minutes) + (uint256(keccak256(abi.encodePacked(blockhash(seedBlockNumber), blockhash(block.number - 1), viewId))) % 900)`
 4.  **Unpredictability during blind period:** `blockhash(block.number - 1)` at lock time is unknown during the blind period.
 5.  **Resistance to lock-time manipulation:** The `lockMarket()` caller cannot predict `blockhash(seedBlockNumber)`, which was committed at the start of the blind period and may be up to 900 seconds (75 blocks on a 12s chain) in the past — well within the 256-block window.
-6.  **Blockhash availability:** Both `blockhash(seedBlockNumber)` and `blockhash(block.number - 1)` are always within the 256-block window at the time of the `lockMarket()` call, provided `lockMarket()` is called within 256 blocks of `endTime` (approximately 50 minutes on a 12-second chain). This is a reasonable operational constraint.
+6.  **Blockhash availability:** Both `blockhash(seedBlockNumber)` and `blockhash(block.number - 1)` are always within the 256-block window at the time of the `lockMarket()` call, provided `lockMarket()` is called within `MAX_LOCK_DELAY_BLOCKS` blocks of `endTime`.
 7.  **Stale Fallback:** If either blockhash returns zero, `T_stop = endTime` (include all blind period slots).
+
+**Lock Execution Window Constraint:**
+
+`lockMarket()` does not require a Keeper, but a maximum delay window must be defined to guarantee `seedBlockNumber`'s blockhash remains readable.
+
+-   **`MAX_LOCK_DELAY_BLOCKS = 200`:** `lockMarket()` must be called within 200 blocks of `endTime`. On a 12-second chain, this is approximately 40 minutes; on a 2-second chain, approximately 7 minutes. This constant is chosen to be safely below the 256-block EVM limit.
+-   **Guarantee:** `seedBlockNumber` is recorded at the start of the blind period (`endTime - 15m`). The blind period is 900 seconds = 75 blocks on a 12s chain. Therefore, at the time `lockMarket()` is called, `seedBlockNumber` is at most `75 + MAX_LOCK_DELAY_BLOCKS = 275` blocks in the past. Since 275 < 256 is **not** satisfied on a 12s chain, the design must account for this.
+-   **Revised Guarantee:** To ensure `seedBlockNumber` is always within the 256-block window, `MAX_LOCK_DELAY_BLOCKS` must satisfy: `blindPeriodBlocks + MAX_LOCK_DELAY_BLOCKS < 256`. On a 12s chain, `blindPeriodBlocks = 75`, so `MAX_LOCK_DELAY_BLOCKS < 181`. Setting `MAX_LOCK_DELAY_BLOCKS = 150` provides a safe margin.
+-   **Enforcement:** If `block.number > endTimeBlock + MAX_LOCK_DELAY_BLOCKS`, the protocol activates the safe fallback: `T_stop = endTime` (include all blind period slots). This ensures the protocol degrades gracefully without reverting.
 
 ---
 
@@ -261,6 +272,14 @@ The following tests must be implemented before Stage 6.6 is considered complete:
 **D. Tail Manipulation Test**
 -   Setup: Execute a large manipulative trade in the final 10 minutes of the blind period.
 -   Verify: With high probability, the trade occurs after `T_stop` and is discarded from the TWAP calculation. The test should be run multiple times to confirm the statistical distribution of `T_stop`.
+
+**E. Delayed Lock Test**
+-   Setup: Call `lockMarket()` more than `MAX_LOCK_DELAY_BLOCKS` blocks after `endTime`, simulating a scenario where the `seedBlockNumber` blockhash has become unavailable.
+-   Verify: The protocol activates the safe fallback (`T_stop = endTime`). All blind period slots are included. The protocol does not revert. The final TWAP is calculated correctly using all available slots.
+
+**F. Empty Blind Period Test**
+-   Setup: Execute trades only during Phase 1 (the first 45 minutes), then stop all trading during Phase 2 (the blind period). No trades occur in the blind period.
+-   Verify: All 60 blind period slots inherit the last known Pulse Index from Phase 1 via Fill-Forward. The total slot count and TWAP calculation are correct. The absence of trades in the blind period does not cause any slot to have a zero or undefined value.
 
 ---
 
