@@ -12,7 +12,7 @@ This Constitution defines the immutable core principles, architectural boundarie
 Pulse Protocol V1 is built upon a highly decoupled, modular architecture enforcing the Principle of Least Privilege. The core principles are:
 
 1.  **Correctness:** The protocol must behave exactly as specified.
-2.  **Security:** The protocol must be resistant to all known attack vectors, maintaining absolute capital safety.
+2.  **Security:** The protocol must be resistant to all known attack vectors, designed to maintain strict capital safety invariants.
 3.  **Auditability:** Contracts must be readable and verifiable by third-party auditors without internal documentation.
 4.  **Gas Optimization:** Gas savings are acceptable only if they do not compromise the above three priorities.
 
@@ -70,7 +70,7 @@ No module may acquire or exercise permissions beyond its strict boundary. The Tr
 *Source: `docs/Protocol_Security_Standard.md`, `docs/Stage6_5_Security_Hardened_Report.md`*
 
 ### Capital Safety & Accounting Invariants
-The protocol guarantees absolute capital safety through the following invariant:
+The protocol enforces capital safety through the following invariant:
 `Vault.balance() + totalWithdrawals + totalSettled + totalFeesReleased >= totalDeposits`
 
 Furthermore, the Solvency Invariant must always hold:
@@ -99,7 +99,7 @@ Pulse Protocol V1 supports two specific types of prediction markets (Views), as 
 
 ### PERMANENT Market
 -   **Rule:** Has no `endTime` (`endTime == 0`). Never enters Settlement.
--   **Constraint:** Cannot be locked. The `TradingEngine.lockMarket` function explicitly rejects locking for PERMANENT markets.
+-   **Constraint:** Cannot be locked. The `TradingEngine.lockMarket` function explicitly rejects locking for PERMANENT markets. V1 prohibits automatic closure and defines no termination mechanism for PERMANENT markets.
 
 *Source: `contracts/interfaces/IPulseFactory.sol`, `docs/Stage6_5_Security_Hardened_Report.md`*
 
