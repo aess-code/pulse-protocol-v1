@@ -51,7 +51,7 @@ describe("TradingEngine — Round 2 Full Test Suite", function () {
             metadataURI: "", metadataHash: ethers.ZeroHash,
             createdAt: Math.floor(Date.now() / 1000),
             startTime: Math.floor(Date.now() / 1000),
-            endTime: Math.floor(Date.now() / 1000) + 3600,
+            endTime: Math.floor(Date.now() / 1000) + 7200, // Stage 6.6: min 90 min (5400s), use 2h for safety
             vault: await mockVault.getAddress(),
             priceEngine: await mockPriceEngine.getAddress(),
             settlementManager: ethers.ZeroAddress,

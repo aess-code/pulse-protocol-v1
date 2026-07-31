@@ -30,16 +30,20 @@ import { ITradingEngine }      from "../interfaces/ITradingEngine.sol";
 ///      ── Time Constraints (Stage 4.5 Hardening) ────────────────────────────
 ///      For FIXED views:
 ///        endTime >= startTime + SETTLEMENT_WINDOW + MIN_TRADING_DURATION
-///        where SETTLEMENT_WINDOW = 30 minutes, MIN_TRADING_DURATION = 30 minutes
-///        Minimum total duration: 1 hour
+///        where SETTLEMENT_WINDOW = 60 minutes (Stage 6.6), MIN_TRADING_DURATION = 30 minutes
+///        Minimum total duration: 90 minutes
 contract PulseFactory is IPulseFactory {
 
     // ─────────────────────────────────────────────────────────────────────────
     // Constants
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// @notice Duration of the settlement window (last 30 minutes before EndTime).
-    uint256 public constant SETTLEMENT_WINDOW     = 30 minutes;
+    /// @notice Duration of the observation window (last 60 minutes before EndTime).
+    /// @dev Stage 6.6: Updated from 30 minutes to 60 minutes to accommodate the
+    ///      Dynamic Fixed-Slot Random-Cutoff Discrete TWAP observation window.
+    ///      This constant is used ONLY for new market creation validation.
+    ///      It does NOT affect already-created markets or their settlement behaviour.
+    uint256 public constant SETTLEMENT_WINDOW     = 60 minutes;
 
     /// @notice Minimum active trading duration before the settlement window.
     uint256 public constant MIN_TRADING_DURATION  = 30 minutes;

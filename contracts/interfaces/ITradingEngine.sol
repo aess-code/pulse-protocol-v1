@@ -183,8 +183,8 @@ interface ITradingEngine {
     ///        5. Call MarketVault.deposit(netAmount) for accounting confirmation.
     ///        6. Update MarketState (forSupply / againstSupply / reserveBalance / lastPulseIndex / lastTradeTimestamp).
     ///        7. Update positions[viewId][user].forShares/againstShares += sharesOut.
-    ///        8. Call TWAPLibrary.tryRecordSnapshot().
-    ///        9. Emit Bought, PulseIndexUpdated, TWAPSnapshotRecorded (if applicable).
+    ///        8. Call TWAPLibrary.recordSlotState() to update the active 15-second slot.
+    ///        9. Emit Bought, PulseIndexUpdated.
     /// @param viewId       The ViewID to trade in.
     /// @param side         Position side: 0 = For, 1 = Against.
     /// @param amountIn     Gross settlement token amount (fee deducted internally).
@@ -202,8 +202,8 @@ interface ITradingEngine {
     ///        5. Update MarketState.
     ///        6. Call FeeManager.recordFee() for internal fee accounting.
     ///        7. Call MarketVault.withdraw(user, netAmountOut).
-    ///        8. Call TWAPLibrary.tryRecordSnapshot().
-    ///        9. Emit Sold, PulseIndexUpdated, TWAPSnapshotRecorded (if applicable).
+    ///        8. Call TWAPLibrary.recordSlotState() to update the active 15-second slot.
+    ///        9. Emit Sold, PulseIndexUpdated.
     /// @param viewId       The ViewID to trade in.
     /// @param side         Position side: 0 = For, 1 = Against.
     /// @param sharesIn     Number of internal Position Shares to sell.
@@ -216,9 +216,12 @@ interface ITradingEngine {
     ///      Execution order:
     ///        1. Validate status == ACTIVE.
     ///        2. Validate block.timestamp >= endTime.
-    ///        3. Call TWAPLibrary.finaliseTWAP() and store finalTWAP.
-    ///        4. Advance status: ACTIVE → LOCKED.
+    ///        3. Call TWAPLibrary.finaliseTWAP(endTime, viewId) — Dual-Anchor Blockhash.
+    ///        4. Advance status: ACTIVE → LOCKED (atomic).
     ///        5. Emit MarketLocked, TWAPFinalised, MarketStatusChanged.
+    ///
+    ///      Stage 6.6: TWAP is a discrete arithmetic mean of Fixed-Slot observations.
+    ///      T_stop is determined by Dual-Anchor Blockhash. No revert if no blind-period trade.
     ///
     ///      Note: lockMarket() transitions to LOCKED, NOT directly to SETTLEMENT.
     ///      The SettlementManager must call settleMarket() separately to advance to SETTLEMENT,

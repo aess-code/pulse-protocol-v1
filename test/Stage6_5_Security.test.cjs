@@ -158,11 +158,11 @@ describe("Stage 6.5 Security Fixes Regression", function () {
 
         it("should allow locking a FIXED market after endTime", async function () {
             const startTime = Math.floor(Date.now() / 1000);
-            const endTime = startTime + 3600;
+            const endTime = startTime + 5400; // Stage 6.6: min 90 min
             await factory.connect(creator).createView(0, "uri", ethers.ZeroHash, startTime, endTime);
             const viewId = 1;
 
-            await ethers.provider.send("evm_increaseTime", [3601]);
+            await ethers.provider.send("evm_increaseTime", [5401]);
             await ethers.provider.send("evm_mine");
 
             await expect(tradingEngine.lockMarket(viewId))

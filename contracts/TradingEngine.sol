@@ -32,6 +32,11 @@ import { ReentrancyGuard }   from "@openzeppelin/contracts/utils/ReentrancyGuard
 ///
 ///      ── Stage 5 Round 2 (Post-Audit) ──────────────────────────────────────
 ///      Trade Execution (buy/sell) with full defensive validation.
+///
+///      ── Stage 6.6 ─────────────────────────────────────────────────────────
+///      Dynamic Fixed-Slot Random-Cutoff Discrete TWAP.
+///      buy/sell now call TWAPLibrary.recordSlotState().
+///      lockMarket() calls TWAPLibrary.finaliseTWAP(endTime, viewId).
 contract TradingEngine is ITradingEngine, ReentrancyGuard {
 
     using SafeERC20 for IERC20;
@@ -172,10 +177,11 @@ contract TradingEngine is ITradingEngine, ReentrancyGuard {
         IERC20(IMarketVault(vaultAddr).token()).safeTransferFrom(msg.sender, vaultAddr, amountIn);
         IMarketVault(vaultAddr).deposit(amountIn);
 
-        // ── 7. TWAP Snapshot (Fix ⑥: only records if status is ACTIVE and inside window) ──
-        // TWAPLibrary.tryRecordSnapshot internally checks: locked, endTime, window, interval.
-        // TradingEngine additional guard: only call if status is still ACTIVE (already enforced by step 1).
-        twapStates[viewId].tryRecordSnapshot(newPulseIndex, endTime);
+        // ── 7. TWAP Slot State (Stage 6.6: time-defined slot, not trade-triggered snapshot) ──
+        // recordSlotState writes the current Pulse Index to the active 15-second slot.
+        // Records seedBlockNumber on first blind-period trade.
+        // No-op if outside the 60-minute observation window.
+        twapStates[viewId].recordSlotState(newPulseIndex, endTime);
 
         // ── 8. Events ─────────────────────────────────────────────────────────
         emit Bought(viewId, msg.sender, side, amountIn, sharesOut, newPulseIndex);
@@ -256,8 +262,8 @@ contract TradingEngine is ITradingEngine, ReentrancyGuard {
         // Net amount is withdrawn from Vault to the seller. Fee stays in Vault.
         IMarketVault(vaultAddr).withdraw(msg.sender, netAmountOut);
 
-        // ── 7. TWAP Snapshot ──────────────────────────────────────────────────
-        twapStates[viewId].tryRecordSnapshot(newPulseIndex, endTime);
+        // ── 7. TWAP Slot State (Stage 6.6) ───────────────────────────────────
+        twapStates[viewId].recordSlotState(newPulseIndex, endTime);
 
         // ── 8. Events ─────────────────────────────────────────────────────────
         emit Sold(viewId, msg.sender, side, sharesIn, amountOut, newPulseIndex);
@@ -293,8 +299,11 @@ contract TradingEngine is ITradingEngine, ReentrancyGuard {
             revert TradingEngine__EndTimeNotReached(viewId, block.timestamp, endTime);
         }
 
-        // Finalise TWAP
-        uint256 finalTWAP = twapStates[viewId].finaliseTWAP();
+        // Finalise TWAP (Stage 6.6: Dual-Anchor Blockhash, atomic state transition)
+        // finaliseTWAP computes T_stop, reconstructs all valid slots, and returns
+        // the discrete arithmetic mean. All state changes are atomic — if this
+        // call reverts, no partial state transition occurs.
+        uint256 finalTWAP = twapStates[viewId].finaliseTWAP(endTime, viewId);
 
         // Advance status
         MarketStatus oldStatus = state.status;
