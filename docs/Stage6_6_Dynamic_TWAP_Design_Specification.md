@@ -1,6 +1,6 @@
 # Pulse Protocol V1 Stage 6.6 Dynamic TWAP Design Specification
 
-**Status:** Design Proposal — Security Hardening Extension (Revision 3)  
+**Status:** Design Proposal — Security Hardening Extension (Revision 4)  
 **Classification:** Stage 6.6 replaces only the Settlement Observation Algorithm. The CSM pricing model, Pulse Index formula, Vault custody, Fee mechanics, Settlement Payout formulas, and Market Lifecycle State Machine are entirely unchanged.
 
 ---
@@ -78,6 +78,10 @@ This is a fundamental protocol invariant that prevents future trades from contam
 3.  **Slot finalization is permanent:** Once a slot ends, its value is fixed forever.
 4.  **Future trades are bounded:** Any future trade can only affect the current slot and future slots. It is impossible for any future trade to modify the value of a slot that has already ended.
 
+**Slot Finalization is Logical, Not Transaction-Triggered:**
+
+The protocol does not require an automatic transaction to be executed every 15 seconds. Slot finalization is a logical property: once `block.timestamp` has passed the end of a slot, that slot's historical value is logically determined by the last trade that occurred within or before it. No on-chain action is needed to "close" a slot. This ensures the protocol remains fully autonomous with no Keeper or frontend dependency.
+
 **Example:**
 
 | Slot | Time | Activity | Final Value |
@@ -128,7 +132,7 @@ The random cutoff time `T_stop` must fall strictly between `endTime - 15m` and `
 **Delayed Future Block Hash:**
 
 1.  **Commit:** At the start of the Blind Period (`endTime - 15m`), the system records the current `block.number` as `entropyBlockNumber`.
-2.  **Entropy Source:** `T_stop` is derived from `blockhash(entropyBlockNumber + K)`, where `K` is chosen such that block `entropyBlockNumber + K` is not produced until **after** `endTime`. On a 12-second block time, the blind period is 900 seconds = 75 blocks. Therefore, `K >= 75` ensures the entropy block is mined after the blind period ends.
+2.  **Entropy Source:** `T_stop` is derived from `blockhash(entropyBlockNumber + K)`, where `K` must be selected dynamically to ensure that block `entropyBlockNumber + K` is mined **after** `endTime`. The value of `K` must not be hardcoded based on a fixed block time assumption. Instead, `K` should be calculated at the time `entropyBlockNumber` is recorded as: `K = ceil((endTime - block.timestamp) / averageBlockTime) + safetyBuffer`, where `averageBlockTime` is a conservative on-chain estimate and `safetyBuffer` is a small constant (e.g., 10 blocks) to account for block time variance. This ensures the entropy block is mined after `endTime` regardless of network conditions.
 3.  **Unpredictability:** During the entire blind period, the blockhash of a future block is unknown to all participants, including validators.
 4.  **Determinism:** By the time `lockMarket()` is called (after `endTime`), block `entropyBlockNumber + K` has been mined and its hash is fixed and verifiable.
 5.  **Calculation:** `T_stop = (endTime - 15 minutes) + (uint256(blockhash(entropyBlockNumber + K)) % 900)`
@@ -163,6 +167,19 @@ The final TWAP calculation is a **discrete arithmetic mean** of all valid slot v
 -   **Packed `uint16` Array:** Store each slot's Pulse Index as `uint16` (range 0–9999 fits in 16 bits). Pack 16 slots per `uint256` storage word. 240 slots require only 15 storage words.
 -   **Sparse Map with Last-Known-Index:** Store only the slots that received a trade update (sparse). Additionally, store the `lastKnownIndex` at the time of each write. At finalization, iterate through all slot indices and fill gaps using the last known value at the time each slot ended.
 -   **Critical Requirement:** The storage design must preserve the finalized value of each slot as it was at the time the slot ended. Storing only the last trade index is insufficient, as it would not allow correct reconstruction of historical slot values.
+
+**Storage Implementation Invariant:**
+
+Sparse storage optimization **MUST NOT** reconstruct historical slots using future state. When recovering an empty slot at finalization time, the protocol must use the last valid Pulse Index that existed at or before the moment that slot ended. It is strictly prohibited to fill past empty slots with the Pulse Index that exists at the time `finaliseTWAP()` is called.
+
+Example:
+-   slot 1 ends with Index = 5000 (last known at that time)
+-   slot 2 ends with no trade → inherits 5000 (last known at slot 2 end time)
+-   slot 3 has a trade → Index = 8000
+
+Correct result: `slot1 = 5000, slot2 = 5000, slot3 = 8000`
+
+Prohibited result: `slot1 = 8000, slot2 = 8000` (using future state to fill past slots)
 
 ---
 
