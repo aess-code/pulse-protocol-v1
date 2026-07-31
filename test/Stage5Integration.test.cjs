@@ -134,7 +134,8 @@ async function setupView(ctx, endTimeOffset = 7200) {
         VIEW_ID,
         await token.getAddress(),
         await tradingEngine.getAddress(),
-        await settlementManager.getAddress()
+        await settlementManager.getAddress(),
+        await ctx.mockFactory.getAddress()
     );
     await vault.waitForDeployment();
 
@@ -193,7 +194,7 @@ describe("Stage 5 — Full Integration & Security Tests", function () {
         it("User A can buy FOR position", async function () {
             const { vault, VIEW_ID } = await setupView(ctx);
             const amountIn = ethers.parseEther("100");
-            const tx = await ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, amountIn);
+            const tx = await ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, amountIn, 0);
             await expect(tx).to.emit(ctx.tradingEngine, "Bought");
             const pos = await ctx.tradingEngine.getPosition(VIEW_ID, ctx.userA.address);
             expect(pos.forShares).to.be.gt(0n);
@@ -203,7 +204,7 @@ describe("Stage 5 — Full Integration & Security Tests", function () {
         it("User B can buy AGAINST position", async function () {
             const { vault, VIEW_ID } = await setupView(ctx);
             // Buy FOR first to establish a large reserve
-            await ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, ethers.parseEther("100"));
+            await ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, ethers.parseEther("100"), 0);
             // After 100 ETH FOR buy at index 5000:
             //   forShares = 100e18 * 10000 / 5000 = 200e18
             //   reserve = 100e18
@@ -215,7 +216,7 @@ describe("Stage 5 — Full Integration & Security Tests", function () {
             // To avoid solvency: min(forShares, newAgainstShares) <= newReserve
             // Use 10000 wei AGAINST (fee = 100 wei, notifyFeeRecorded won't revert)
             const amountIn = 10000n;
-            await ctx.tradingEngine.connect(ctx.userB).buy(VIEW_ID, 1, amountIn);
+            await ctx.tradingEngine.connect(ctx.userB).buy(VIEW_ID, 1, amountIn, 0);
             const pos = await ctx.tradingEngine.getPosition(VIEW_ID, ctx.userB.address);
             expect(pos.againstShares).to.be.gt(0n);
         });
@@ -223,12 +224,12 @@ describe("Stage 5 — Full Integration & Security Tests", function () {
         it("User can sell their position", async function () {
             const { VIEW_ID } = await setupView(ctx);
             // Buy FOR to establish position
-            await ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, ethers.parseEther("100"));
+            await ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, ethers.parseEther("100"), 0);
             const pos = await ctx.tradingEngine.getPosition(VIEW_ID, ctx.userA.address);
             const balBefore = await ctx.token.balanceOf(ctx.userA.address);
             // Sell only half the shares to avoid solvency issues with single-sided market
             const halfShares = pos.forShares / 2n;
-            await ctx.tradingEngine.connect(ctx.userA).sell(VIEW_ID, 0, halfShares);
+            await ctx.tradingEngine.connect(ctx.userA).sell(VIEW_ID, 0, halfShares, 0);
             const balAfter = await ctx.token.balanceOf(ctx.userA.address);
             expect(balAfter).to.be.gt(balBefore);
         });
@@ -236,7 +237,7 @@ describe("Stage 5 — Full Integration & Security Tests", function () {
         it("Fee is recorded after buy", async function () {
             const { VIEW_ID } = await setupView(ctx);
             const amountIn = ethers.parseEther("100");
-            await ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, amountIn);
+            await ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, amountIn, 0);
             const expectedFee = amountIn / 100n;
             expect(await ctx.mockFeeManager.totalRecordedFees()).to.equal(expectedFee);
         });
@@ -278,7 +279,7 @@ describe("Stage 5 — Full Integration & Security Tests", function () {
             await ethers.provider.send("evm_mine", []);
             await ctx.tradingEngine.lockMarket(VIEW_ID);
             await expect(
-                ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, ethers.parseEther("100"))
+                ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, ethers.parseEther("100"), 0)
             ).to.be.revertedWithCustomError(ctx.tradingEngine, "TradingEngine__MarketNotActive");
         });
     });
@@ -329,7 +330,7 @@ describe("Stage 5 — Full Integration & Security Tests", function () {
 
         it("Should settle market and emit MarketSettled", async function () {
             const { VIEW_ID } = await setupView(ctx, 1);
-            await ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, ethers.parseEther("100"));
+            await ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, ethers.parseEther("100"), 0);
             await ethers.provider.send("evm_increaseTime", [10]);
             await ethers.provider.send("evm_mine", []);
             await ctx.tradingEngine.lockMarket(VIEW_ID);
@@ -363,7 +364,7 @@ describe("Stage 5 — Full Integration & Security Tests", function () {
 
         it("Should revert claimReward if user has no position", async function () {
             const { VIEW_ID } = await setupView(ctx, 1);
-            await ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, ethers.parseEther("100"));
+            await ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, ethers.parseEther("100"), 0);
             await ethers.provider.send("evm_increaseTime", [10]);
             await ethers.provider.send("evm_mine", []);
             await ctx.tradingEngine.lockMarket(VIEW_ID);
@@ -375,7 +376,7 @@ describe("Stage 5 — Full Integration & Security Tests", function () {
 
         it("Should revert double claim", async function () {
             const { VIEW_ID } = await setupView(ctx, 1);
-            await ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, ethers.parseEther("100"));
+            await ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, ethers.parseEther("100"), 0);
             await ethers.provider.send("evm_increaseTime", [10]);
             await ethers.provider.send("evm_mine", []);
             await ctx.tradingEngine.lockMarket(VIEW_ID);
@@ -389,9 +390,9 @@ describe("Stage 5 — Full Integration & Security Tests", function () {
         it("Winner receives funds, loser receives nothing", async function () {
             const { vault, VIEW_ID } = await setupView(ctx, 1);
             // UserA buys FOR (drives index > 5000)
-            await ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, ethers.parseEther("100"));
+            await ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, ethers.parseEther("100"), 0);
             // UserB buys AGAINST (10000 wei to stay within solvency bounds)
-            await ctx.tradingEngine.connect(ctx.userB).buy(VIEW_ID, 1, 10000n);
+            await ctx.tradingEngine.connect(ctx.userB).buy(VIEW_ID, 1, 10000n, 0);
 
             await ethers.provider.send("evm_increaseTime", [10]);
             await ethers.provider.send("evm_mine", []);
@@ -462,9 +463,9 @@ describe("Stage 5 — Full Integration & Security Tests", function () {
     describe("Section 7: Vault Invariant", function () {
         it("VaultBalance >= reserve after multiple trades", async function () {
             const { vault, VIEW_ID } = await setupView(ctx);
-            await ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, ethers.parseEther("100"));
+            await ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, ethers.parseEther("100"), 0);
             // Buy AGAINST with 10000 wei to stay within solvency bounds
-            await ctx.tradingEngine.connect(ctx.userB).buy(VIEW_ID, 1, 10000n);
+            await ctx.tradingEngine.connect(ctx.userB).buy(VIEW_ID, 1, 10000n, 0);
             const vaultBalance = await vault.balance();
             const reserve = (await ctx.tradingEngine.getMarketState(VIEW_ID)).reserveBalance;
             expect(vaultBalance).to.be.gte(reserve);
@@ -473,7 +474,7 @@ describe("Stage 5 — Full Integration & Security Tests", function () {
         it("VaultBalance = reserve + unclaimedFees after buy", async function () {
             const { vault, VIEW_ID } = await setupView(ctx);
             const amountIn = ethers.parseEther("100");
-            await ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, amountIn);
+            await ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, amountIn, 0);
             const vaultBalance = await vault.balance();
             const reserve = (await ctx.tradingEngine.getMarketState(VIEW_ID)).reserveBalance;
             const fee = amountIn / 100n;
@@ -488,14 +489,14 @@ describe("Stage 5 — Full Integration & Security Tests", function () {
         it("Should revert buy with 0 amount", async function () {
             const { VIEW_ID } = await setupView(ctx);
             await expect(
-                ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, 0)
+                ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, 0, 0)
             ).to.be.revertedWithCustomError(ctx.tradingEngine, "TradingEngine__ZeroAmount");
         });
 
         it("Should revert buy with invalid side", async function () {
             const { VIEW_ID } = await setupView(ctx);
             await expect(
-                ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 2, ethers.parseEther("1"))
+                ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 2, ethers.parseEther("1"), 0)
             ).to.be.revertedWithCustomError(ctx.tradingEngine, "TradingEngine__InvalidSide");
         });
 
@@ -505,15 +506,15 @@ describe("Stage 5 — Full Integration & Security Tests", function () {
             // 1000 wei: sharesOut = 1000 * 10000 / 5000 = 2000 shares
             // minSupply = min(2000, 0) = 0 <= 1000 reserve — solvency OK
             await expect(
-                ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, 1000n)
+                ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, 1000n, 0)
             ).to.not.be.reverted;
         });
 
         it("Should revert sell with insufficient position", async function () {
             const { VIEW_ID } = await setupView(ctx);
-            await ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, ethers.parseEther("100"));
+            await ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, ethers.parseEther("100"), 0);
             await expect(
-                ctx.tradingEngine.connect(ctx.userA).sell(VIEW_ID, 0, ethers.parseEther("999999"))
+                ctx.tradingEngine.connect(ctx.userA).sell(VIEW_ID, 0, ethers.parseEther("999999"), 0)
             ).to.be.revertedWithCustomError(ctx.tradingEngine, "TradingEngine__InsufficientPosition");
         });
 
@@ -552,7 +553,7 @@ describe("Stage 5 — Full Integration & Security Tests", function () {
 
         it("Unauthorized releaseFee: reverts", async function () {
             const { vault, VIEW_ID } = await setupView(ctx);
-            await ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, ethers.parseEther("100"));
+            await ctx.tradingEngine.connect(ctx.userA).buy(VIEW_ID, 0, ethers.parseEther("100"), 0);
             await expect(
                 vault.connect(ctx.attacker).releaseFee(ctx.attacker.address, ethers.parseEther("1"))
             ).to.be.revertedWithCustomError(vault, "Vault__UnauthorisedFeeManager");

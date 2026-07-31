@@ -153,11 +153,9 @@ contract FeeManager is IFeeManager {
         emit FeeRecorded(viewId, creator, totalFee, creatorFee, treasuryFee, teamFee);
 
         // Notify Vault of the new fee obligation (enables Vault-layer quota protection).
-        // If Vault is not yet registered (e.g. in tests), skip gracefully.
         address vaultAddr = factory.getVault(viewId);
-        if (vaultAddr != address(0)) {
-            IMarketVault(vaultAddr).notifyFeeRecorded(totalFee);
-        }
+        if (vaultAddr == address(0)) revert FeeManager__VaultNotFound(viewId);
+        IMarketVault(vaultAddr).notifyFeeRecorded(totalFee);
     }
 
     /// @inheritdoc IFeeManager

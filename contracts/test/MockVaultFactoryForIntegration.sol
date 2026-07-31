@@ -21,7 +21,8 @@ contract MockVaultFactoryForIntegration {
         address authorisedSettlement
     ) external returns (address vault) {
         require(vaults[viewId] == address(0), "Already deployed");
-        MarketVault newVault = new MarketVault(viewId, token, authorisedEngine, authorisedSettlement);
+        // For testing, we use this contract as the factory address
+        MarketVault newVault = new MarketVault(viewId, token, authorisedEngine, authorisedSettlement, address(this));
         vault = address(newVault);
         vaults[viewId] = vault;
         emit VaultDeployed(viewId, vault);

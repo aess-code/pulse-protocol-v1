@@ -71,6 +71,9 @@ interface ISettlementManager {
     /// @notice Thrown when the TWAP data is invalid or unavailable.
     error Settlement__InvalidTWAP(uint256 viewId);
 
+    /// @notice Thrown when a zero address is provided for a required constructor argument.
+    error Settlement__ZeroAddress();
+
     // ─────────────────────────────────────────────────────────────────────────
     // State-Changing Functions
     // ─────────────────────────────────────────────────────────────────────────

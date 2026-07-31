@@ -98,7 +98,8 @@ contract MarketVaultFactory is IMarketVaultFactory {
             viewId,
             token,
             authorisedEngine,
-            authorisedSettlement
+            authorisedSettlement,
+            authorizedFactory
         );
 
         vault = address(newVault);

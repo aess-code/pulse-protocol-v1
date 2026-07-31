@@ -68,6 +68,9 @@ interface IFeeManager {
     /// @notice Thrown when the creator address is the zero address.
     error FeeManager__InvalidCreator();
 
+    /// @notice Thrown when the Vault address for a ViewID is not found.
+    error FeeManager__VaultNotFound(uint256 viewId);
+
     // ─────────────────────────────────────────────────────────────────────────
     // State-Changing Functions
     // ─────────────────────────────────────────────────────────────────────────

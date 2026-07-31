@@ -84,7 +84,7 @@ describe("TradingEngine — Round 2 Full Test Suite", function () {
 
         it("Should update forSupply, reserve, pulseIndex after buy FOR", async function () {
             const amountIn = ethers.parseEther("100");
-            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn);
+            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn, 0);
             const state = await tradingEngine.getMarketState(VIEW_ID);
             expect(state.forSupply).to.equal(SHARES_OUT);
             expect(state.reserveBalance).to.equal(NEW_RESERVE);
@@ -93,34 +93,34 @@ describe("TradingEngine — Round 2 Full Test Suite", function () {
 
         it("Should update user position after buy", async function () {
             const amountIn = ethers.parseEther("100");
-            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn);
+            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn, 0);
             const pos = await tradingEngine.getPosition(VIEW_ID, user.address);
             expect(pos.forShares).to.equal(SHARES_OUT);
         });
 
         it("Should transfer gross amount to Vault (Fix ①: fee asset flow)", async function () {
             const amountIn = ethers.parseEther("100");
-            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn);
+            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn, 0);
             expect(await mockVault.lastDepositAmount()).to.equal(amountIn);
         });
 
         it("Should record 1% fee in FeeManager (Fix ①: fee accounting)", async function () {
             const amountIn = ethers.parseEther("100");
-            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn);
+            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn, 0);
             const expectedFee = amountIn / 100n;
             expect(await mockFeeManager.lastRecordedFee()).to.equal(expectedFee);
         });
 
         it("Should emit Bought with correct parameters (Fix ⑪)", async function () {
             const amountIn = ethers.parseEther("100");
-            const tx = await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn);
+            const tx = await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn, 0);
             await expect(tx).to.emit(tradingEngine, "Bought")
                 .withArgs(VIEW_ID, user.address, SIDE_FOR, amountIn, SHARES_OUT, NEW_INDEX);
         });
 
         it("Should emit PulseIndexUpdated with final storage value (Fix ⑪)", async function () {
             const amountIn = ethers.parseEther("100");
-            const tx = await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn);
+            const tx = await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn, 0);
             await expect(tx).to.emit(tradingEngine, "PulseIndexUpdated")
                 .withArgs(VIEW_ID, NEW_INDEX);
             const state = await tradingEngine.getMarketState(VIEW_ID);
@@ -137,18 +137,18 @@ describe("TradingEngine — Round 2 Full Test Suite", function () {
         });
 
         it("Should revert if amountIn is zero", async function () {
-            await expect(tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, 0))
+            await expect(tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, 0, 0))
                 .to.be.revertedWithCustomError(tradingEngine, "TradingEngine__ZeroAmount");
         });
 
         it("Should revert if side is invalid", async function () {
-            await expect(tradingEngine.connect(user).buy(VIEW_ID, 2, 100))
+            await expect(tradingEngine.connect(user).buy(VIEW_ID, 2, 100, 0))
                 .to.be.revertedWithCustomError(tradingEngine, "TradingEngine__InvalidSide");
         });
 
         it("Should revert and rollback all state if transferFrom fails (insufficient allowance)", async function () {
             await mockToken.connect(user).approve(await tradingEngine.getAddress(), 0);
-            await expect(tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100")))
+            await expect(tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100"), 0))
                 .to.be.reverted;
             // Verify complete rollback
             const state = await tradingEngine.getMarketState(VIEW_ID);
@@ -162,7 +162,7 @@ describe("TradingEngine — Round 2 Full Test Suite", function () {
             const poorUser = user2;
             await mockToken.connect(poorUser).approve(await mockVault.getAddress(), ethers.MaxUint256);
             // poorUser has 0 balance
-            await expect(tradingEngine.connect(poorUser).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100")))
+            await expect(tradingEngine.connect(poorUser).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100"), 0))
                 .to.be.reverted;
             const state = await tradingEngine.getMarketState(VIEW_ID);
             expect(state.forSupply).to.equal(0);
@@ -170,7 +170,7 @@ describe("TradingEngine — Round 2 Full Test Suite", function () {
 
         it("Should revert and rollback all state if Vault.deposit fails", async function () {
             await mockVault.setDepositFail(true);
-            await expect(tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100")))
+            await expect(tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100"), 0))
                 .to.be.reverted;
             const state = await tradingEngine.getMarketState(VIEW_ID);
             expect(state.forSupply).to.equal(0);
@@ -184,20 +184,20 @@ describe("TradingEngine — Round 2 Full Test Suite", function () {
     describe("sell() — Success Path", function () {
         beforeEach(async function () {
             await mockPriceEngine.setQuoteBuy(SHARES_OUT, NEW_INDEX, NEW_RESERVE);
-            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100"));
+            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100"), 0);
             await mockPriceEngine.setQuoteSell(AMOUNT_OUT, NEW_INDEX_S, NEW_RESERVE_S);
         });
 
         it("Should deduct forShares from user position after sell", async function () {
             const sharesIn = ethers.parseEther("20");
-            await tradingEngine.connect(user).sell(VIEW_ID, SIDE_FOR, sharesIn);
+            await tradingEngine.connect(user).sell(VIEW_ID, SIDE_FOR, sharesIn, 0);
             const pos = await tradingEngine.getPosition(VIEW_ID, user.address);
             expect(pos.forShares).to.equal(SHARES_OUT - sharesIn);
         });
 
         it("Should update forSupply and reserve after sell", async function () {
             const sharesIn = ethers.parseEther("20");
-            await tradingEngine.connect(user).sell(VIEW_ID, SIDE_FOR, sharesIn);
+            await tradingEngine.connect(user).sell(VIEW_ID, SIDE_FOR, sharesIn, 0);
             const state = await tradingEngine.getMarketState(VIEW_ID);
             expect(state.forSupply).to.equal(SHARES_OUT - sharesIn);
             expect(state.reserveBalance).to.equal(NEW_RESERVE_S);
@@ -205,7 +205,7 @@ describe("TradingEngine — Round 2 Full Test Suite", function () {
 
         it("Should emit Sold with correct parameters (Fix ⑪)", async function () {
             const sharesIn = ethers.parseEther("20");
-            const tx = await tradingEngine.connect(user).sell(VIEW_ID, SIDE_FOR, sharesIn);
+            const tx = await tradingEngine.connect(user).sell(VIEW_ID, SIDE_FOR, sharesIn, 0);
             await expect(tx).to.emit(tradingEngine, "Sold")
                 .withArgs(VIEW_ID, user.address, SIDE_FOR, sharesIn, AMOUNT_OUT, NEW_INDEX_S);
         });
@@ -217,12 +217,12 @@ describe("TradingEngine — Round 2 Full Test Suite", function () {
     describe("sell() — Vault Liquidity Failure Rollback (Fix ②)", function () {
         beforeEach(async function () {
             await mockPriceEngine.setQuoteBuy(SHARES_OUT, NEW_INDEX, NEW_RESERVE);
-            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100"));
+            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100"), 0);
             await mockPriceEngine.setQuoteSell(AMOUNT_OUT, NEW_INDEX_S, NEW_RESERVE_S);
         });
 
         it("Should revert if user has insufficient position", async function () {
-            await expect(tradingEngine.connect(user).sell(VIEW_ID, SIDE_FOR, ethers.parseEther("100")))
+            await expect(tradingEngine.connect(user).sell(VIEW_ID, SIDE_FOR, ethers.parseEther("100"), 0))
                 .to.be.revertedWithCustomError(tradingEngine, "TradingEngine__InsufficientPosition");
         });
 
@@ -232,7 +232,7 @@ describe("TradingEngine — Round 2 Full Test Suite", function () {
             const stateBefore = await tradingEngine.getMarketState(VIEW_ID);
             const posBefore = await tradingEngine.getPosition(VIEW_ID, user.address);
 
-            await expect(tradingEngine.connect(user).sell(VIEW_ID, SIDE_FOR, sharesIn))
+            await expect(tradingEngine.connect(user).sell(VIEW_ID, SIDE_FOR, sharesIn, 0))
                 .to.be.reverted;
 
             // Verify complete rollback
@@ -250,25 +250,25 @@ describe("TradingEngine — Round 2 Full Test Suite", function () {
     describe("Defensive Validation — PriceEngine Output (Fix ③④⑤)", function () {
         it("Should revert if PriceEngine returns sharesOut = 0", async function () {
             await mockPriceEngine.setQuoteBuy(0, 5100, NET_AMOUNT);
-            await expect(tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100")))
+            await expect(tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100"), 0))
                 .to.be.revertedWithCustomError(tradingEngine, "TradingEngine__InvalidPriceEngineOutput");
         });
 
         it("Should revert if PriceEngine returns newPulseIndex = 0 (Fix ④)", async function () {
             await mockPriceEngine.setQuoteBuy(SHARES_OUT, 0, NET_AMOUNT);
-            await expect(tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100")))
+            await expect(tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100"), 0))
                 .to.be.revertedWithCustomError(tradingEngine, "TradingEngine__InvalidPriceEngineOutput");
         });
 
         it("Should revert if PriceEngine returns newPulseIndex = 10000 (Fix ④)", async function () {
             await mockPriceEngine.setQuoteBuy(SHARES_OUT, 10000, NET_AMOUNT);
-            await expect(tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100")))
+            await expect(tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100"), 0))
                 .to.be.revertedWithCustomError(tradingEngine, "TradingEngine__InvalidPriceEngineOutput");
         });
 
         it("Should revert if PriceEngine returns newReserveBalance = 0 on buy", async function () {
             await mockPriceEngine.setQuoteBuy(SHARES_OUT, 5100, 0);
-            await expect(tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100")))
+            await expect(tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100"), 0))
                 .to.be.revertedWithCustomError(tradingEngine, "TradingEngine__InvalidReserveBalance");
         });
 
@@ -277,18 +277,18 @@ describe("TradingEngine — Round 2 Full Test Suite", function () {
             await mockPriceEngine.setQuoteBuy(SHARES_OUT, 5100, 1n); // 1 wei < initial 0 is fine, but < current reserve is invalid
             // Set initial reserve to something > 1
             await mockPriceEngine.setQuoteBuy(SHARES_OUT, 5100, NET_AMOUNT);
-            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100"));
+            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100"), 0);
             // Now try a second buy where reserve would decrease
             await mockPriceEngine.setQuoteBuy(SHARES_OUT, 5100, 1n);
-            await expect(tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100")))
+            await expect(tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100"), 0))
                 .to.be.revertedWithCustomError(tradingEngine, "TradingEngine__InvalidReserveBalance");
         });
 
         it("Should revert if sell amountOut = 0", async function () {
             await mockPriceEngine.setQuoteBuy(SHARES_OUT, NEW_INDEX, NEW_RESERVE);
-            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100"));
+            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100"), 0);
             await mockPriceEngine.setQuoteSell(0, NEW_INDEX_S, NEW_RESERVE_S);
-            await expect(tradingEngine.connect(user).sell(VIEW_ID, SIDE_FOR, ethers.parseEther("10")))
+            await expect(tradingEngine.connect(user).sell(VIEW_ID, SIDE_FOR, ethers.parseEther("10"), 0))
                 .to.be.revertedWithCustomError(tradingEngine, "TradingEngine__InvalidPriceEngineOutput");
         });
     });
@@ -300,7 +300,7 @@ describe("TradingEngine — Round 2 Full Test Suite", function () {
         it("VaultBalance should equal reserve + cumulative fees after buy", async function () {
             await mockPriceEngine.setQuoteBuy(SHARES_OUT, NEW_INDEX, NET_AMOUNT);
             const amountIn = ethers.parseEther("100");
-            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn);
+            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn, 0);
 
             const vaultBalance = await mockVault.balance();
             const reserve = (await tradingEngine.getMarketState(VIEW_ID)).reserveBalance;
@@ -313,7 +313,7 @@ describe("TradingEngine — Round 2 Full Test Suite", function () {
         it("FeeManager recorded fee should match 1% of amountIn", async function () {
             await mockPriceEngine.setQuoteBuy(SHARES_OUT, NEW_INDEX, NET_AMOUNT);
             const amountIn = ethers.parseEther("100");
-            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn);
+            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn, 0);
             expect(await mockFeeManager.lastRecordedFee()).to.equal(amountIn / 100n);
         });
     });
@@ -332,7 +332,7 @@ describe("TradingEngine — Round 2 Full Test Suite", function () {
             for (let i = 0; i < 10; i++) {
                 const newReserve = currentReserve + netAmount;
                 await mockPriceEngine.setQuoteBuy(sharesPerTrade, 5100, newReserve);
-                await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn);
+                await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn, 0);
                 currentReserve = newReserve;
                 currentSupply += sharesPerTrade;
             }
@@ -355,7 +355,7 @@ describe("TradingEngine — Round 2 Full Test Suite", function () {
             await mockPriceEngine.setQuoteBuy(1n, 5001n, 1n);
             await mockToken.mint(user.address, 1n);
             await mockToken.connect(user).approve(await tradingEngine.getAddress(), ethers.MaxUint256);
-            await expect(tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, 1n))
+            await expect(tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, 1n, 0))
                 .to.not.be.reverted;
         });
 
@@ -365,7 +365,7 @@ describe("TradingEngine — Round 2 Full Test Suite", function () {
             await mockToken.mint(user.address, largeAmount);
             await mockToken.connect(user).approve(await tradingEngine.getAddress(), ethers.MaxUint256);
             await mockPriceEngine.setQuoteBuy(largeNet, 9999n, largeNet);
-            await expect(tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, largeAmount))
+            await expect(tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, largeAmount, 0))
                 .to.not.be.reverted;
             const state = await tradingEngine.getMarketState(VIEW_ID);
             expect(state.lastPulseIndex).to.equal(9999n);
@@ -373,14 +373,14 @@ describe("TradingEngine — Round 2 Full Test Suite", function () {
 
         it("Should revert buy if PulseIndex would be 10000 (boundary)", async function () {
             await mockPriceEngine.setQuoteBuy(SHARES_OUT, 10000n, NET_AMOUNT);
-            await expect(tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100")))
+            await expect(tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100"), 0))
                 .to.be.revertedWithCustomError(tradingEngine, "TradingEngine__InvalidPriceEngineOutput");
         });
 
         it("Should revert buy if PulseIndex would be 1 (boundary is valid)", async function () {
             await mockPriceEngine.setQuoteBuy(SHARES_OUT, 1n, NET_AMOUNT);
             await mockToken.connect(user).approve(await tradingEngine.getAddress(), ethers.MaxUint256);
-            await expect(tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100")))
+            await expect(tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, ethers.parseEther("100"), 0))
                 .to.not.be.reverted;
         });
     });

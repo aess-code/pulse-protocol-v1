@@ -108,7 +108,7 @@ describe("TradingEngine — Invariant Test Suite (Fix ⑫)", function () {
         const amountIn = ethers.parseEther("100");
         const netAmount = amountIn - amountIn / 100n;
         await mockPriceEngine.setQuoteBuy(ethers.parseEther("50"), 5100n, netAmount);
-        await tradingEngine.connect(alice).buy(VIEW_ID, 0, amountIn);
+        await tradingEngine.connect(alice).buy(VIEW_ID, 0, amountIn, 0);
         await assertInvariants("after alice buy");
     });
 
@@ -117,7 +117,7 @@ describe("TradingEngine — Invariant Test Suite (Fix ⑫)", function () {
         const netAmount = amountIn - amountIn / 100n;
         const sharesOut = ethers.parseEther("50");
         await mockPriceEngine.setQuoteBuy(sharesOut, 5100n, netAmount);
-        await tradingEngine.connect(alice).buy(VIEW_ID, 0, amountIn);
+        await tradingEngine.connect(alice).buy(VIEW_ID, 0, amountIn, 0);
         await assertInvariants("after alice buy");
 
         const sharesIn = ethers.parseEther("20");
@@ -125,7 +125,7 @@ describe("TradingEngine — Invariant Test Suite (Fix ⑫)", function () {
         const netOut = amountOut - amountOut / 100n;
         const newReserve = netAmount - netOut;
         await mockPriceEngine.setQuoteSell(amountOut, 4900n, newReserve);
-        await tradingEngine.connect(alice).sell(VIEW_ID, 0, sharesIn);
+        await tradingEngine.connect(alice).sell(VIEW_ID, 0, sharesIn, 0);
         await assertInvariants("after alice sell");
     });
 
@@ -137,13 +137,13 @@ describe("TradingEngine — Invariant Test Suite (Fix ⑫)", function () {
         // Alice buys FOR
         reserve += netAmount;
         await mockPriceEngine.setQuoteBuy(ethers.parseEther("45"), 5200n, reserve);
-        await tradingEngine.connect(alice).buy(VIEW_ID, 0, amountIn);
+        await tradingEngine.connect(alice).buy(VIEW_ID, 0, amountIn, 0);
         await assertInvariants("after alice buy FOR");
 
         // Bob buys AGAINST
         reserve += netAmount;
         await mockPriceEngine.setQuoteBuy(ethers.parseEther("45"), 4800n, reserve);
-        await tradingEngine.connect(bob).buy(VIEW_ID, 1, amountIn);
+        await tradingEngine.connect(bob).buy(VIEW_ID, 1, amountIn, 0);
         await assertInvariants("after bob buy AGAINST");
 
         // Alice sells half her FOR position
@@ -153,7 +153,7 @@ describe("TradingEngine — Invariant Test Suite (Fix ⑫)", function () {
         const netOut = amountOut - amountOut / 100n;
         reserve -= netOut;
         await mockPriceEngine.setQuoteSell(amountOut, 5000n, reserve);
-        await tradingEngine.connect(alice).sell(VIEW_ID, 0, sellShares);
+        await tradingEngine.connect(alice).sell(VIEW_ID, 0, sellShares, 0);
         await assertInvariants("after alice partial sell");
     });
 
@@ -172,7 +172,7 @@ describe("TradingEngine — Invariant Test Suite (Fix ⑫)", function () {
             reserve += net;
             expectedTotalFees += fee;
             await mockPriceEngine.setQuoteBuy(net, 5100n, reserve);
-            await tradingEngine.connect(alice).buy(VIEW_ID, 0, amountIn);
+            await tradingEngine.connect(alice).buy(VIEW_ID, 0, amountIn, 0);
         }
 
         const totalFees = await mockFeeManager.totalRecordedFees();

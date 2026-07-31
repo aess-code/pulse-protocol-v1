@@ -52,10 +52,11 @@ Pulse Protocol V1 adopts a highly decoupled, modular architecture enforcing the 
 
 ## Current Status
 
-**Stage 5: Core Completion**
-- All core modules are fully implemented.
-- The protocol achieves 100% test coverage with 83/83 passing tests.
-- Ready for Stage 6 Independent Security Audit.
+**Stage 6.5: Security Hardened (Official V1 Baseline)**
+- All core modules are fully implemented and architecturally frozen.
+- All vulnerabilities discovered during the Stage 6 Independent Security Audit have been fixed.
+- The protocol achieves 100% test coverage with 92/92 passing tests (including security regression tests).
+- This repository represents the current official V1 baseline for all future development.
 
 ## Development Environment
 

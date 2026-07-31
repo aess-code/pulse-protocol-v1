@@ -109,7 +109,7 @@ contract TradingEngine is ITradingEngine, ReentrancyGuard {
     ///        5. Interactions (Vault transfer + deposit)
     ///        6. TWAP snapshot (after all state settled)
     ///        7. Events
-    function buy(uint256 viewId, uint256 side, uint256 amountIn) external nonReentrant returns (uint256 sharesOut) {
+    function buy(uint256 viewId, uint256 side, uint256 amountIn, uint256 minSharesOut) external nonReentrant returns (uint256 sharesOut) {
         // ── 1. Checks ────────────────────────────────────────────────────────
         _requireStatus(viewId, MarketStatus.ACTIVE);
         if (amountIn == 0) revert TradingEngine__ZeroAmount();
@@ -117,7 +117,7 @@ contract TradingEngine is ITradingEngine, ReentrancyGuard {
 
         // ── Load state and ViewRecord (minimal fields) ────────────────────────
         MarketState storage state = marketStates[viewId];
-        (address creator, address vaultAddr, uint256 endTime) = _getViewFields(viewId);
+        (address creator, , address vaultAddr, uint256 endTime) = _getViewFields(viewId);
         if (vaultAddr == address(0)) revert TradingEngine__VaultNotFound(viewId);
 
         // ── 2. Pricing Calculation (Delegate to PriceEngine) ─────────────────
@@ -141,6 +141,9 @@ contract TradingEngine is ITradingEngine, ReentrancyGuard {
         if (newReserveBalance == 0) revert TradingEngine__InvalidReserveBalance(viewId, newReserveBalance);
         // Fix ⑤: Verify reserve does not decrease on a buy (solvency double-check)
         if (newReserveBalance < state.reserveBalance) revert TradingEngine__InvalidReserveBalance(viewId, newReserveBalance);
+
+        // ── Slippage Protection ──
+        if (sharesOut < minSharesOut) revert TradingEngine__SlippageExceeded(sharesOut, minSharesOut);
 
         // ── 4. Fee Accounting (Delegate to FeeManager — no token transfer) ───
         feeManager.recordFee(viewId, creator, totalFee);
@@ -189,7 +192,7 @@ contract TradingEngine is ITradingEngine, ReentrancyGuard {
     ///        5. Interactions (Vault withdraw)
     ///        6. TWAP snapshot
     ///        7. Events
-    function sell(uint256 viewId, uint256 side, uint256 sharesIn) external nonReentrant returns (uint256 amountOut) {
+    function sell(uint256 viewId, uint256 side, uint256 sharesIn, uint256 minAmountOut) external nonReentrant returns (uint256 amountOut) {
         // ── 1. Checks ────────────────────────────────────────────────────────
         _requireStatus(viewId, MarketStatus.ACTIVE);
         if (sharesIn == 0) revert TradingEngine__ZeroAmount();
@@ -203,7 +206,7 @@ contract TradingEngine is ITradingEngine, ReentrancyGuard {
 
         // ── Load state and ViewRecord (minimal fields) ────────────────────────
         MarketState storage state = marketStates[viewId];
-        (address creator, address vaultAddr, uint256 endTime) = _getViewFields(viewId);
+        (address creator, , address vaultAddr, uint256 endTime) = _getViewFields(viewId);
         if (vaultAddr == address(0)) revert TradingEngine__VaultNotFound(viewId);
 
         // ── 2. Pricing Calculation (Delegate to PriceEngine) ─────────────────
@@ -223,6 +226,9 @@ contract TradingEngine is ITradingEngine, ReentrancyGuard {
         _validatePulseIndex(viewId, newPulseIndex);
         // Fix ⑤: Verify reserve does not increase on a sell (solvency double-check)
         if (newReserveBalance > state.reserveBalance) revert TradingEngine__InvalidReserveBalance(viewId, newReserveBalance);
+
+        // ── Slippage Protection ──
+        if (amountOut < minAmountOut) revert TradingEngine__SlippageExceeded(amountOut, minAmountOut);
 
         // ── 4. Fee Accounting (Delegate to FeeManager — no token transfer) ───
         uint256 totalFee    = MathLibrary.applyBps(amountOut, FEE_BPS);
@@ -275,7 +281,14 @@ contract TradingEngine is ITradingEngine, ReentrancyGuard {
         }
 
         // Must have reached EndTime
-        (, , uint256 endTime) = _getViewFields(viewId);
+        (, IPulseFactory.ViewType viewType, , uint256 endTime) = _getViewFields(viewId);
+
+        // PERMANENT markets cannot be locked by this function.
+        // They require a dedicated resolution mechanism (out of scope for V1 core).
+        if (viewType == IPulseFactory.ViewType.PERMANENT) {
+            revert TradingEngine__InvalidStatus(viewId, state.status);
+        }
+
         if (block.timestamp < endTime) {
             revert TradingEngine__EndTimeNotReached(viewId, block.timestamp, endTime);
         }
@@ -437,18 +450,19 @@ contract TradingEngine is ITradingEngine, ReentrancyGuard {
         }
     }
 
-    /// @notice Returns only the three fields needed from a ViewRecord (Fix ⑦: avoids full struct copy).
-    /// @dev Reads creator, vault, and endTime from the Factory. Includes existence check.
+    /// @notice Returns fields needed from a ViewRecord (Fix ⑦: avoids full struct copy).
+    /// @dev Reads creator, viewType, vault, and endTime from the Factory. Includes existence check.
     /// @return creator  Address of the View's creator.
+    /// @return viewType Type of the View (FIXED/PERMANENT).
     /// @return vault    Address of the View's MarketVault.
     /// @return endTime  Unix timestamp of the View's end time.
     function _getViewFields(uint256 viewId)
         internal
         view
-        returns (address creator, address vault, uint256 endTime)
+        returns (address creator, IPulseFactory.ViewType viewType, address vault, uint256 endTime)
     {
         _requireViewExists(viewId);
         IPulseFactory.ViewRecord memory r = factory.getView(viewId);
-        return (r.creator, r.vault, r.endTime);
+        return (r.creator, r.viewType, r.vault, r.endTime);
     }
 }

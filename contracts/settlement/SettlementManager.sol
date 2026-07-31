@@ -76,7 +76,7 @@ contract SettlementManager is ISettlementManager {
     /// @param _factory       Address of the PulseFactory registry.
     constructor(address _tradingEngine, address _factory) {
         if (_tradingEngine == address(0) || _factory == address(0)) {
-            revert Settlement__InvalidTWAP(0); // reuse as zero-address guard
+            revert Settlement__ZeroAddress();
         }
         tradingEngine = ITradingEngine(_tradingEngine);
         factory       = IPulseFactory(_factory);

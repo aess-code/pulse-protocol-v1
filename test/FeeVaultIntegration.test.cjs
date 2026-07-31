@@ -100,7 +100,7 @@ describe("FeeVault Integration — Final Architecture Freeze", function () {
             teamFee     = (fee * 20n) / 100n;
 
             await mockPriceEngine.setQuoteBuy(ethers.parseEther("50"), 5100n, netAmount);
-            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn);
+            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn, 0);
         });
 
         it("After buy: Vault.totalFeesRecorded equals total fee (notifyFeeRecorded called)", async function () {
@@ -181,7 +181,7 @@ describe("FeeVault Integration — Final Architecture Freeze", function () {
             const amountIn = ethers.parseEther("100");
             const netAmount = amountIn - amountIn / 100n;
             await mockPriceEngine.setQuoteBuy(ethers.parseEther("50"), 5100n, netAmount);
-            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn);
+            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn, 0);
 
             // totalFeesRecorded = 1 token. Try to release 2 tokens.
             // Manually seed FeeManager ledger to a large value
@@ -234,9 +234,9 @@ describe("FeeVault Integration — Final Architecture Freeze", function () {
             const fee = amountIn / 100n;
 
             await mockPriceEngine.setQuoteBuy(ethers.parseEther("50"), 5100n, netAmount);
-            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn);
+            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn, 0);
             await mockPriceEngine.setQuoteBuy(ethers.parseEther("50"), 5200n, netAmount * 2n);
-            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn);
+            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn, 0);
 
             expect(await mockVault.totalFeesRecorded()).to.equal(fee * 2n);
         });
@@ -250,7 +250,7 @@ describe("FeeVault Integration — Final Architecture Freeze", function () {
             const amountIn = ethers.parseEther("100");
             const netAmount = amountIn - amountIn / 100n;
             await mockPriceEngine.setQuoteBuy(ethers.parseEther("50"), 5100n, netAmount);
-            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn);
+            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn, 0);
             const vaultBalance = await mockVault.balance();
             const reserve = (await tradingEngine.getMarketState(VIEW_ID)).reserveBalance;
             expect(vaultBalance).to.be.gte(reserve);
@@ -260,7 +260,7 @@ describe("FeeVault Integration — Final Architecture Freeze", function () {
             const amountIn = ethers.parseEther("100");
             const netAmount = amountIn - amountIn / 100n;
             await mockPriceEngine.setQuoteBuy(ethers.parseEther("50"), 5100n, netAmount);
-            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn);
+            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn, 0);
             await mockFeeManager.claimCreatorFee(VIEW_ID, await mockVault.getAddress(), creator.address);
             const vaultBalance = await mockVault.balance();
             const reserve = (await tradingEngine.getMarketState(VIEW_ID)).reserveBalance;
@@ -271,7 +271,7 @@ describe("FeeVault Integration — Final Architecture Freeze", function () {
             const amountIn = ethers.parseEther("100");
             const netAmount = amountIn - amountIn / 100n;
             await mockPriceEngine.setQuoteBuy(ethers.parseEther("50"), 5100n, netAmount);
-            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn);
+            await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn, 0);
             await mockFeeManager.claimCreatorFee(VIEW_ID, await mockVault.getAddress(), creator.address);
             await mockFeeManager.claimTreasuryFee(VIEW_ID, await mockVault.getAddress(), treasury.address);
             const vaultBalance = await mockVault.balance();

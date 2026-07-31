@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import { IPriceEngine } from "./IPriceEngine.sol";
+
 /// @title ITradingEngine
 /// @notice Interface for the shared trading execution layer of Pulse Protocol V1.
 /// @dev TradingEngine is the **sole module** responsible for:
@@ -164,6 +166,9 @@ interface ITradingEngine {
     /// @notice Thrown when the reserve balance is invalid after a trade (zero or overflow).
     error TradingEngine__InvalidReserveBalance(uint256 viewId, uint256 reserve);
 
+    /// @notice Thrown when the actual output (shares or amount) is less than the user's minimum requirement.
+    error TradingEngine__SlippageExceeded(uint256 actual, uint256 minimum);
+
     // ─────────────────────────────────────────────────────────────────────────
     // State-Changing Functions
     // ─────────────────────────────────────────────────────────────────────────
@@ -180,28 +185,31 @@ interface ITradingEngine {
     ///        7. Update positions[viewId][user].forShares/againstShares += sharesOut.
     ///        8. Call TWAPLibrary.tryRecordSnapshot().
     ///        9. Emit Bought, PulseIndexUpdated, TWAPSnapshotRecorded (if applicable).
-    /// @param viewId   The ViewID to trade in.
-    /// @param side     Position side: 0 = For, 1 = Against.
-    /// @param amountIn Gross settlement token amount (fee deducted internally).
-    /// @return sharesOut Number of Position Shares minted to the caller.
-    function buy(uint256 viewId, uint256 side, uint256 amountIn) external returns (uint256 sharesOut);
+    /// @param viewId       The ViewID to trade in.
+    /// @param side         Position side: 0 = For, 1 = Against.
+    /// @param amountIn     Gross settlement token amount (fee deducted internally).
+    /// @param minSharesOut Minimum number of Position Shares the user is willing to accept.
+    /// @return sharesOut    Number of Position Shares minted to the caller.
+    function buy(uint256 viewId, uint256 side, uint256 amountIn, uint256 minSharesOut) external returns (uint256 sharesOut);
 
     /// @notice Sell a For or Against position in a View.
     /// @dev Requires market status == ACTIVE.
     ///      Execution order (CEI):
     ///        1. Validate status, side, shares, and position balance.
     ///        2. Call PriceEngine.quoteSell() to compute amountOut and new state.
-    ///        3. Update positions[viewId][user].forShares/againstShares -= sharesIn.
-    ///        4. Update MarketState.
-    ///        5. Call FeeManager.recordFee() for internal fee accounting.
-    ///        6. Call MarketVault.withdraw(user, netAmountOut).
-    ///        7. Call TWAPLibrary.tryRecordSnapshot().
-    ///        8. Emit Sold, PulseIndexUpdated, TWAPSnapshotRecorded (if applicable).
-    /// @param viewId   The ViewID to trade in.
-    /// @param side     Position side: 0 = For, 1 = Against.
-    /// @param sharesIn Number of internal Position Shares to sell.
-    /// @return amountOut Net settlement token amount returned to the caller (after fees).
-    function sell(uint256 viewId, uint256 side, uint256 sharesIn) external returns (uint256 amountOut);
+    ///        3. Verify slippage: amountOut >= minAmountOut.
+    ///        4. Update positions[viewId][user].forShares/againstShares -= sharesIn.
+    ///        5. Update MarketState.
+    ///        6. Call FeeManager.recordFee() for internal fee accounting.
+    ///        7. Call MarketVault.withdraw(user, netAmountOut).
+    ///        8. Call TWAPLibrary.tryRecordSnapshot().
+    ///        9. Emit Sold, PulseIndexUpdated, TWAPSnapshotRecorded (if applicable).
+    /// @param viewId       The ViewID to trade in.
+    /// @param side         Position side: 0 = For, 1 = Against.
+    /// @param sharesIn     Number of internal Position Shares to sell.
+    /// @param minAmountOut Minimum amount of settlement token the user is willing to accept.
+    /// @return amountOut    Net settlement token amount returned to the caller (after fees).
+    function sell(uint256 viewId, uint256 side, uint256 sharesIn, uint256 minAmountOut) external returns (uint256 amountOut);
 
     /// @notice Lock a market after EndTime has been reached.
     /// @dev Permissionless — anyone may call once block.timestamp >= endTime.
@@ -290,4 +298,7 @@ interface ITradingEngine {
     /// @dev Reads directly from the MarketVault's balance() function.
     /// @param viewId The ViewID to query.
     function getVaultBalance(uint256 viewId) external view returns (uint256);
+
+    /// @notice Returns the address of the shared PriceEngine.
+    function priceEngine() external view returns (IPriceEngine);
 }

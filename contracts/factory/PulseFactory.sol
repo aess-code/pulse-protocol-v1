@@ -207,7 +207,7 @@ contract PulseFactory is IPulseFactory {
             startTime:         startTime,
             endTime:           endTime,
             vault:             vault,
-            priceEngine:       address(0), // PriceEngine is shared; resolved via TradingEngine
+            priceEngine:       address(ITradingEngine(tradingEngine).priceEngine()),
             settlementManager: settlementManager,
             feeConfig:         FeeConfig({
                 totalBps:    100,

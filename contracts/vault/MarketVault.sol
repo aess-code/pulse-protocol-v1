@@ -88,6 +88,9 @@ contract MarketVault is IMarketVault, ReentrancyGuard {
     ///      Set at construction by MarketVaultFactory. Cannot be changed.
     address public immutable authorizedSettlementManager;
 
+    /// @notice The authorised PulseFactory address (deployer).
+    address public immutable factory;
+
     // ─────────────────────────────────────────────────────────────────────────
     // Mutable Authorization State
     // ─────────────────────────────────────────────────────────────────────────
@@ -148,16 +151,19 @@ contract MarketVault is IMarketVault, ReentrancyGuard {
         uint256 _viewId,
         address _token,
         address _authorizedTradingEngine,
-        address _authorizedSettlement
+        address _authorizedSettlement,
+        address _factory
     ) {
         if (_token                   == address(0)) revert Vault__ZeroAddress();
         if (_authorizedTradingEngine == address(0)) revert Vault__ZeroAddress();
         if (_authorizedSettlement    == address(0)) revert Vault__ZeroAddress();
+        if (_factory                 == address(0)) revert Vault__ZeroAddress();
 
         viewId                      = _viewId;
         token                       = _token;
         authorizedTradingEngine     = _authorizedTradingEngine;
         authorizedSettlementManager = _authorizedSettlement;
+        factory                     = _factory;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -315,18 +321,11 @@ contract MarketVault is IMarketVault, ReentrancyGuard {
     ///      is the only entity that deploys Vaults and knows the FeeManager address.
     ///      In practice, the Factory calls this in the same transaction as deployment.
     function setFeeManager(address feeManager) external override {
-        // Authorization: Only the authorised TradingEngine may call this function.
-        // The PulseFactory calls this in the same transaction as Vault deployment,
-        // routing through the TradingEngine address as the trusted caller.
-        //
-        // Exception: If authorizedTradingEngine is not yet set (e.g., during testing
-        // or when the Factory calls this directly before setting the TE), we allow
-        // any caller. This is safe because setFeeManager can only be called once.
-        //
-        // In production, the PulseFactory is the only entity that deploys Vaults
-        // and calls setFeeManager in the same atomic transaction.
-        if (authorizedTradingEngine != address(0)) {
-            if (msg.sender != authorizedTradingEngine) revert Vault__UnauthorisedEngine();
+        // Authorization: Only the authorised TradingEngine OR the Factory may call this function.
+        // The PulseFactory calls this in the same transaction as Vault deployment.
+        // We use the immutable factory address set in the Vault constructor to verify the caller.
+        if (msg.sender != authorizedTradingEngine && msg.sender != factory) {
+            revert Vault__UnauthorisedEngine();
         }
         if (authorizedFeeManager != address(0)) revert Vault__FeeManagerAlreadySet();
         if (feeManager == address(0))           revert Vault__ZeroAddress();
