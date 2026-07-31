@@ -1,6 +1,6 @@
 # Pulse Protocol V1 Stage 6.6 Dynamic TWAP Design Specification
 
-**Status:** Design Proposal — Security Hardening Extension (Revision 5)  
+**Status:** Design Proposal — Security Hardening Extension (Revision 6)  
 **Classification:** Stage 6.6 replaces only the Settlement Observation Algorithm. The CSM pricing model, Pulse Index formula, Vault custody, Fee mechanics, Settlement Payout formulas, and Market Lifecycle State Machine are entirely unchanged.
 
 ---
@@ -106,6 +106,15 @@ This is a fundamental protocol invariant that prevents future trades from contam
 
 The protocol does not require an automatic transaction to be executed every 15 seconds. Slot finalization is a logical property: once `block.timestamp` has passed the end of a slot, that slot's historical value is logically determined by the last trade that occurred within or before it. No on-chain action is needed to "close" a slot. This ensures the protocol remains fully autonomous with no Keeper or frontend dependency.
 
+**Implementation Constraint:**
+
+The following implementations are explicitly prohibited:
+-   A `closeSlot()` function called by a Keeper.
+-   Any automated transaction executed every 15 seconds.
+-   Any frontend-triggered timed call.
+
+The correct implementation reconstructs the complete historical slot sequence inside `finaliseTWAP()` using only `slotIndex` arithmetic and the sparse storage of trade events. The finalization loop iterates from slot 0 to the last valid slot, carrying forward the last known index to fill any gaps. This reconstruction is entirely deterministic and requires no external input.
+
 **Example:**
 
 | Slot | Time | Activity | Final Value |
@@ -160,18 +169,28 @@ Two approaches were evaluated:
 | **Dynamic K** | `K = ceil((endTime - block.timestamp) / avgBlockTime) + buffer` | Adapts to any block time | Requires on-chain block time estimation; adds complexity; harder to audit |
 | **Fixed Safe Block Distance** | `K = 300` (a fixed constant large enough to exceed the blind period on any realistic L1/L2) | Simple, auditable, no estimation required | Slightly conservative; may delay entropy availability on very fast chains |
 
-**V1 Selection: Fixed Safe Block Distance.**
+**V1 Selection: Dual-Anchor Blockhash (Revised).**
 
-For V1, simplicity and auditability take priority over precision. A fixed `K = 300` blocks is selected. On any realistic EVM chain (block time 1–15 seconds), 300 blocks corresponds to 5–75 minutes, which exceeds the 15-minute blind period in all cases. This eliminates the need for on-chain block time estimation and makes the mechanism trivially auditable.
+The previously proposed `K = 300` design was identified as incompatible with the EVM `blockhash` 256-block limit. If `lockMarket()` is called more than 256 blocks after `entropyBlockNumber + 300`, the hash returns zero and the fallback activates, defeating the randomness guarantee.
 
-**Mechanism:**
+A new design is required that satisfies all constraints simultaneously:
+-   Unpredictable during the blind period.
+-   Not manipulable by the `lockMarket()` caller.
+-   Always within the 256-block `blockhash` window at the time of the `lockMarket()` call.
+-   No external oracle.
+-   Simple and auditable.
 
-1.  **Commit:** At the start of the Blind Period (`endTime - 15m`), the system records the current `block.number` as `entropyBlockNumber`.
-2.  **Entropy Source:** `T_stop` is derived from `blockhash(entropyBlockNumber + 300)`.
-3.  **Unpredictability:** During the entire blind period, the blockhash of block `entropyBlockNumber + 300` is unknown to all participants.
-4.  **Determinism:** By the time `lockMarket()` is called, block `entropyBlockNumber + 300` has been mined and its hash is fixed and verifiable.
-5.  **Calculation:** `T_stop = (endTime - 15 minutes) + (uint256(blockhash(entropyBlockNumber + 300)) % 900)`
-6.  **Stale Fallback:** If `blockhash(entropyBlockNumber + 300)` returns zero (called more than 256 blocks after that block), `T_stop = endTime` (include all blind period slots).
+**Revised Mechanism: Lock-Time Blockhash with Blind Period Seed**
+
+The key insight is that the `lockMarket()` caller cannot manipulate `T_stop` if the entropy is derived from a combination of two sources: one committed before the blind period (unknown at lock time) and one from the lock transaction itself (unknown during the blind period). Neither source alone is sufficient for manipulation.
+
+1.  **Commit (Blind Period Start):** At the first trade after `endTime - 15m`, the system records the current `block.number` as `seedBlockNumber`.
+2.  **Lock-Time Entropy:** At `lockMarket()`, the system uses `blockhash(block.number - 1)` as the second entropy source.
+3.  **Combined Entropy:** `T_stop = (endTime - 15 minutes) + (uint256(keccak256(abi.encodePacked(blockhash(seedBlockNumber), blockhash(block.number - 1), viewId))) % 900)`
+4.  **Unpredictability during blind period:** `blockhash(block.number - 1)` at lock time is unknown during the blind period.
+5.  **Resistance to lock-time manipulation:** The `lockMarket()` caller cannot predict `blockhash(seedBlockNumber)`, which was committed at the start of the blind period and may be up to 900 seconds (75 blocks on a 12s chain) in the past — well within the 256-block window.
+6.  **Blockhash availability:** Both `blockhash(seedBlockNumber)` and `blockhash(block.number - 1)` are always within the 256-block window at the time of the `lockMarket()` call, provided `lockMarket()` is called within 256 blocks of `endTime` (approximately 50 minutes on a 12-second chain). This is a reasonable operational constraint.
+7.  **Stale Fallback:** If either blockhash returns zero, `T_stop = endTime` (include all blind period slots).
 
 ---
 
