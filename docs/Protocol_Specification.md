@@ -4,7 +4,7 @@
 
 Pulse Protocol V1 is a modular, decentralized prediction market protocol designed for high capital efficiency, strict security isolation, and permissionless execution. Its core objective is to provide a robust, manipulation-resistant platform for creating and trading prediction markets (referred to as "Views").
 
-The protocol is built upon a highly decoupled, modular architecture enforcing the Principle of Least Privilege [1]. By separating trading execution, asset custody, fee accounting, and settlement into independent smart contracts, the protocol guarantees that no single module possesses overarching authority. This design minimizes the attack surface and ensures absolute capital safety.
+The protocol is built upon a highly decoupled, modular architecture enforcing the Principle of Least Privilege [1]. By separating trading execution, asset custody, fee accounting, and settlement into independent smart contracts, the protocol guarantees that no single module possesses overarching authority. This design minimizes the attack surface and is designed to maintain strict capital safety invariants.
 
 ---
 
