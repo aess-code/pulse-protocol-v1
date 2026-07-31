@@ -1,7 +1,7 @@
 # Pulse Protocol V1 Stage 6.6 Dynamic TWAP Design Specification
 
-**Status:** Design Proposal — Security Hardening Extension (Revision 2)  
-**Classification:** Stage 6.6 replaces only the Settlement Observation Algorithm. The CSM pricing model, Pulse Index formula, Vault custody, Fee mechanics, and Settlement Payout formulas are entirely unchanged.
+**Status:** Design Proposal — Security Hardening Extension (Revision 3)  
+**Classification:** Stage 6.6 replaces only the Settlement Observation Algorithm. The CSM pricing model, Pulse Index formula, Vault custody, Fee mechanics, Settlement Payout formulas, and Market Lifecycle State Machine are entirely unchanged.
 
 ---
 
@@ -21,11 +21,12 @@ The root cause is the **determinism of the final observation point** combined wi
 
 The Stage 6.6 upgrade is designed to achieve the following security objectives:
 
-1.  **Fully On-Chain Autonomy:** No reliance on frontends, Keepers, or external Oracles.
+1.  **Fully On-Chain Autonomy:** No manual snapshot submission required. No reliance on frontends, Keepers, or external Oracles.
 2.  **Unpredictable Cutoff:** Attackers must not know when the final effective snapshot will occur during the entire blind period.
 3.  **Validator Resistance:** The caller of `lockMarket()` must not be able to manipulate the random cutoff time.
 4.  **Observation Neutrality:** No user can alter the weight of any time period by changing their trading behavior.
-5.  **Preserve Trading Logic:** The core `buy()` and `sell()` execution flow remains unchanged.
+5.  **Historical Immutability:** A past slot's value is permanently fixed once the slot ends. Future trades cannot modify past observations.
+6.  **Preserve Trading Logic:** The core `buy()` and `sell()` execution flow remains unchanged.
 
 ---
 
@@ -35,132 +36,174 @@ The upgraded mechanism is named **Dynamic Fixed-Slot Random-Cutoff Discrete TWAP
 
 The settlement observation window is extended to **60 minutes** before `endTime` and divided into two phases:
 
--   **Phase 1: Fixed Observation Period (45 minutes)**
-    -   `endTime - 60m` to `endTime - 15m`.
-    -   All 180 time slots are unconditionally included in the final calculation.
--   **Phase 2: Blind Random Period (15 minutes)**
-    -   `endTime - 15m` to `endTime`.
-    -   All 60 time slots are recorded. A random cutoff time `T_stop` is generated. Slots after `T_stop` are discarded.
+**Phase 1: Fixed Observation Period (45 minutes)**
+-   Time range: `endTime - 60m` to `endTime - 15m`.
+-   Fixed 15-second time slots. Total: 180 slots.
+-   All 180 slots are unconditionally included in the final calculation.
+
+**Phase 2: Blind Random Period (15 minutes)**
+-   Time range: `endTime - 15m` to `endTime`.
+-   Fixed 15-second time slots. Total: 60 slots.
+-   A random cutoff time `T_stop` is generated. Slots after `T_stop` are discarded.
+
+**Maximum total slots:** 240 (180 Phase 1 + 60 Phase 2).
 
 ---
 
-## 4. Fixed Slot Snapshot Mechanism
+## 4. Snapshot Slot Principle
 
 **Core Principle: Snapshot slot is time-defined, not trade-triggered.**
 
-Trades do **not** trigger snapshots. Instead, trades update the current slot's Pulse Index state. The complete observation sequence is generated at settlement time according to the slot rules.
+Trades do **not** create snapshots. Every 15-second slot is defined by the protocol and exists regardless of whether any trading occurs. A trade only updates the Pulse Index state for the slot in which it occurs.
 
--   **Slot Duration:** 15 seconds.
--   **Total Slots:** 60 minutes × 4 slots/minute = 240 slots maximum.
--   **Slot Index:** For any timestamp `t` within the observation window, `slotIndex = (t - windowStart) / 15`.
--   **Trade Behavior:** A `buy()` or `sell()` call updates `slotState[slotIndex] = currentPulseIndex`. Multiple trades in the same slot overwrite each other; only the last value in each slot is retained.
--   **Settlement Sequence Generation:** At `finaliseTWAP()`, the protocol iterates through all valid slot indices and applies the Fill-Forward rule to produce the complete observation sequence.
+The following behaviors are explicitly prohibited:
+-   Slots are not created by trades. A slot exists even if no trade occurs within it.
+-   Increasing trade frequency does not increase a slot's weight.
+-   The number of trades does not increase TWAP influence.
+
+Every 15-second slot permanently exists and holds exactly one fixed observation weight.
 
 ---
 
-## 5. Protocol Observation Neutrality
+## 5. Historical Slot Immutability Rule
+
+**Every 15-second slot is permanently finalized once it ends.**
+
+This is a fundamental protocol invariant that prevents future trades from contaminating past observations.
+
+**Finalization Rules:**
+
+1.  **Slot with trades:** The slot's final value equals the last valid Pulse Index recorded within that slot before the slot ended.
+2.  **Slot without trades:** The slot's final value equals the most recent valid Pulse Index from any prior slot or pre-window activity at the time the slot ended.
+3.  **Slot finalization is permanent:** Once a slot ends, its value is fixed forever.
+4.  **Future trades are bounded:** Any future trade can only affect the current slot and future slots. It is impossible for any future trade to modify the value of a slot that has already ended.
+
+**Example:**
+
+| Slot | Time | Activity | Final Value |
+|---|---|---|---|
+| slot 1 | 10:00:00 | No trade, last known index = 5000 | **5000** |
+| slot 2 | 10:00:15 | No trade | **5000** (inherits slot 1) |
+| slot 3 | 10:00:30 | No trade | **5000** (inherits slot 2) |
+| slot 4 | 10:00:45 | Trade occurs, index = 8000 | **8000** |
+
+The value 8000 from slot 4 does **not** retroactively change slots 1, 2, or 3. Those slots were finalized at 5000 when they ended.
+
+---
+
+## 6. Protocol Observation Neutrality
 
 **Every 15-second slot holds exactly one fixed observation weight.**
 
 This is a fundamental protocol invariant. No user can alter the weight distribution of the TWAP by changing their trading behavior:
 
 -   **Increasing trade frequency** does not increase a slot's weight. Multiple trades in the same slot overwrite each other; the slot still contributes exactly one value.
--   **Stopping trading** does not reduce a slot's weight. The Fill-Forward rule ensures every empty slot inherits the previous valid index and still contributes one value.
+-   **Stopping trading** does not reduce a slot's weight. The Historical Slot Immutability Rule ensures every slot has a value, derived from the last known index at the time the slot ended.
 -   **Controlling snapshot count** is impossible. The total number of valid slots is determined solely by `T_stop`, which is unknown to all traders during the blind period.
 
-This neutrality guarantee is enforced by the time-defined slot architecture, not by the trading logic.
+---
+
+## 7. Fill-Forward Rule
+
+**Fill-Forward is applied based on historical slot finalization, not future settlement reconstruction.**
+
+This is a critical distinction. The correct model is forward-propagation in time: when a slot ends without a trade, it inherits the value of the most recent prior slot at that moment. It does **not** look ahead to future trades.
+
+**Correct behavior:**
+-   At the moment slot N ends, if no trade occurred in slot N, its value is set to the value of slot N-1 (or the last known index before the window if no prior slot has a value).
+
+**Prohibited behavior:**
+-   At settlement time, retroactively filling all empty historical slots with the value of the last trade that ever occurred. This would allow future state to contaminate past observations.
+
+The Fill-Forward rule applies to both Phase 1 and Phase 2. There is no slot that lacks a value due to inactivity.
 
 ---
 
-## 6. Fill-Forward Rule
-
-The Fill-Forward rule applies to **both Phase 1 and Phase 2**.
-
-**Rule:** If a slot has no trade activity, it inherits the Pulse Index of the most recent slot that had a valid trade. If no prior slot has any activity, it inherits `lastIndexBeforeWindow`.
-
-**Purpose:** This rule eliminates the "stop-trading attack" where an attacker waits for a favorable moment to resume trading, hoping that periods of inactivity will reduce the weight of unfavorable price periods. Under Fill-Forward, every slot contributes exactly one value regardless of trading activity.
-
-**Implementation:** Fill-Forward is applied lazily at `finaliseTWAP()` time, not during trading. The contract stores only the slots that actually received a trade update. During finalization, it iterates through all slot indices and fills gaps from the last known value.
-
----
-
-## 7. Random Cutoff Mechanism
+## 8. Random Cutoff Mechanism
 
 The random cutoff time `T_stop` must fall strictly between `endTime - 15m` and `endTime`.
 
 **Security Constraint:** `T_stop` cannot be generated using `blockhash(block.number - 1)` at the moment of `lockMarket()`, as a validator could manipulate this.
 
-**Revised Entropy Design — Delayed Future Block Hash:**
-
-The previous design using `entropyBlockNumber + 5` was identified as insufficient. The attacker could observe the blockhash of `entropyBlockNumber + 5` early in the blind period and infer `T_stop` before the blind period ends.
-
-The corrected design requires the entropy source to remain unknown for the **entire duration** of the blind period:
+**Delayed Future Block Hash:**
 
 1.  **Commit:** At the start of the Blind Period (`endTime - 15m`), the system records the current `block.number` as `entropyBlockNumber`.
-2.  **Entropy Source:** `T_stop` is derived from `blockhash(entropyBlockNumber + K)`, where `K` is chosen such that block `entropyBlockNumber + K` is not produced until **after** `endTime`. On a 12-second block time, the blind period is 900 seconds = 75 blocks. Therefore, `K >= 75` ensures the entropy block is not mined until after the blind period ends.
+2.  **Entropy Source:** `T_stop` is derived from `blockhash(entropyBlockNumber + K)`, where `K` is chosen such that block `entropyBlockNumber + K` is not produced until **after** `endTime`. On a 12-second block time, the blind period is 900 seconds = 75 blocks. Therefore, `K >= 75` ensures the entropy block is mined after the blind period ends.
 3.  **Unpredictability:** During the entire blind period, the blockhash of a future block is unknown to all participants, including validators.
 4.  **Determinism:** By the time `lockMarket()` is called (after `endTime`), block `entropyBlockNumber + K` has been mined and its hash is fixed and verifiable.
 5.  **Calculation:** `T_stop = (endTime - 15 minutes) + (uint256(blockhash(entropyBlockNumber + K)) % 900)`
 
-**Stale Blockhash Constraint:** `blockhash()` in Solidity is only available for the last 256 blocks. If `lockMarket()` is called more than 256 blocks after `entropyBlockNumber + K`, the hash returns zero. In this case, the fallback is `T_stop = endTime` (include all blind period slots). This is the safe degradation path.
-
 ---
 
-## 8. Settlement Calculation
+## 9. Settlement Calculation
 
-The final TWAP calculation is a **discrete arithmetic mean** of all valid slot snapshots after applying Fill-Forward.
+The final TWAP calculation is a **discrete arithmetic mean** of all valid slot values.
 
 1.  **Phase 1:** All 180 slots from `endTime - 60m` to `endTime - 15m` are valid.
-2.  **Phase 2:** Only slots with `slotTimestamp <= T_stop` are valid.
-3.  **Fill-Forward:** All empty slots inherit the last known Pulse Index.
-4.  **Formula:**
-    `finalIndex = sum(valid_slot_values) / number(valid_slots)`
+2.  **Phase 2:** Only slots with `slotEndTime <= T_stop` are valid.
+3.  **All slots have values:** Historical Slot Immutability and the Fill-Forward rule ensure no slot is empty.
+4.  **Formula:** `finalIndex = sum(valid_slot_values) / number(valid_slots)`
 
 ---
 
-## 9. Fallback Rules
+## 10. Fallback Rules
 
-1.  **Zero Trades Ever:** `finalTWAP = INITIAL_INDEX` (5000). Result: `DRAW`.
-2.  **Zero Trades in Observation Window:** All slots are filled with `lastIndexBeforeWindow` via Fill-Forward. The TWAP equals that index.
-3.  **Stale Entropy:** If `blockhash(entropyBlockNumber + K)` returns zero, `T_stop = endTime` (include all blind period slots).
+1.  **Zero Trades Ever:** All slots inherit `INITIAL_INDEX` (5000) via Fill-Forward. `finalTWAP = 5000`. Result: `DRAW`.
+2.  **Zero Trades in Observation Window:** All slots inherit `lastIndexBeforeWindow` via Fill-Forward.
+3.  **Stale Entropy:** If `blockhash(entropyBlockNumber + K)` returns zero (called more than 256 blocks late), `T_stop = endTime` (include all blind period slots). This is the safe degradation path.
 
 ---
 
-## 10. Storage Design
+## 11. Storage Design
 
-240 slots cannot be implemented as 240 individual `uint256` storage slots, as this would be prohibitively expensive in Gas.
+240 slots cannot be implemented as 240 individual `uint256` storage slots.
 
 **Recommended Storage Optimization:**
 
--   **Packed Struct:** Store each slot's Pulse Index as `uint16` (range 0–9999 fits in 16 bits). Pack 16 slots per `uint256` storage word. 240 slots require only 15 storage words.
--   **Sparse Map:** Only store slots that received a trade update. At finalization, Fill-Forward reconstructs the full sequence. This reduces average write cost significantly for low-activity markets.
--   **Ring Buffer (Phase 2 only):** For the 60 blind period slots, a ring buffer of 60 `uint16` values can be used, requiring only 4 storage words.
-
-**Summary:** The full 240-slot observation window can be stored in approximately 15–19 `uint256` storage words, compared to 240 words in a naive implementation.
+-   **Packed `uint16` Array:** Store each slot's Pulse Index as `uint16` (range 0–9999 fits in 16 bits). Pack 16 slots per `uint256` storage word. 240 slots require only 15 storage words.
+-   **Sparse Map with Last-Known-Index:** Store only the slots that received a trade update (sparse). Additionally, store the `lastKnownIndex` at the time of each write. At finalization, iterate through all slot indices and fill gaps using the last known value at the time each slot ended.
+-   **Critical Requirement:** The storage design must preserve the finalized value of each slot as it was at the time the slot ended. Storing only the last trade index is insufficient, as it would not allow correct reconstruction of historical slot values.
 
 ---
 
-## 11. Security Analysis
+## 12. Security Analysis
 
 1.  **Last-Second Manipulation:** **Mitigated.** The attacker does not know `T_stop`. A massive trade in the final seconds is highly likely to occur after `T_stop` and be discarded.
-2.  **Continuous 15-Minute Manipulation:** **Mitigated.** An attacker must sustain the manipulated price for the entire 15-minute Blind Period to guarantee inclusion. This exposes them to massive counter-arbitrage risk for a prolonged duration.
-3.  **Stop-Trading Attack:** **Mitigated.** The Fill-Forward mechanism ensures that periods with no trades inherit the previous index. An attacker cannot reduce the weight of a time period by refusing to trade.
-4.  **Snapshot Trigger Manipulation:** **Mitigated.** Snapshots are time-defined, not trade-triggered. A trade can only update the current slot's value, not create additional slots or alter the slot count.
+2.  **Continuous 15-Minute Manipulation:** **Mitigated.** An attacker must sustain the manipulated price for the entire 15-minute Blind Period to guarantee inclusion, exposing them to prolonged counter-arbitrage risk.
+3.  **Stop-Trading Attack:** **Mitigated.** Historical Slot Immutability and Fill-Forward ensure every slot has a value. Stopping trading only causes future empty slots to inherit the current index; it does not reduce the weight of past slots.
+4.  **Snapshot Trigger Manipulation:** **Mitigated.** Snapshots are time-defined. A trade can only update the current slot's value, not create additional slots.
 5.  **Validator/Miner Manipulation:** **Mitigated.** `T_stop` is derived from `blockhash(entropyBlockNumber + K)` where block `entropyBlockNumber + K` is mined after `endTime`. The validator calling `lockMarket()` cannot select a block to produce a favorable `T_stop`.
-6.  **Gas Attack:** **Mitigated.** The `finaliseTWAP()` function iterates a fixed maximum of 240 slots. This is bounded and predictable.
-7.  **Storage Growth:** **Addressed.** The packed storage design limits the on-chain footprint to approximately 15–19 `uint256` words per View.
+6.  **Future State Contamination Attack:** **Mitigated.** An attacker cannot wait for multiple empty slots and then execute a large trade to retroactively change the values of those slots. Historical Slot Immutability permanently fixes each slot's value at the time it ends. Future trades only affect current and future slots.
+7.  **Gas Attack:** **Mitigated.** `finaliseTWAP()` iterates a fixed maximum of 240 slots. This is bounded and predictable.
+8.  **Storage Growth:** **Addressed.** The packed storage design limits the on-chain footprint to approximately 15–19 `uint256` words per View.
 
 ---
 
-## 12. Gas Impact
+## 13. Protocol Invariant Checklist
+
+The following invariants must hold in the final implementation:
+
+| # | Invariant | Guarantee |
+|---|---|---|
+| 1 | No manual snapshot submission required | Time-defined slots; trades passively update slot state |
+| 2 | No frontend or Keeper dependency | All slot logic is on-chain |
+| 3 | Stopping trading does not reduce any time period's weight | Historical Slot Immutability + Fill-Forward |
+| 4 | Increasing trade frequency does not increase weight | One value per slot; overwrites are idempotent |
+| 5 | Future trades cannot modify past TWAP results | Historical Slot Immutability |
+| 6 | `T_stop` cannot be predicted during the blind period | Entropy from future block hash (`entropyBlockNumber + K`) |
+| 7 | `T_stop` cannot be manipulated by `lockMarket()` caller | Entropy block is mined after `endTime` |
+| 8 | Only Settlement Observation Algorithm is modified | All other contracts unchanged |
+
+---
+
+## 14. Gas Impact
 
 -   **Per-Trade:** One conditional storage write when a trade occurs in a new slot. Cost is approximately 20,000 Gas (new slot) or 5,000 Gas (overwrite existing slot).
 -   **`lockMarket()`:** One `blockhash()` call plus a loop of up to 240 iterations with simple arithmetic. Estimated total: 200,000–400,000 Gas, well within block limits.
--   **Comparison to Stage 6.5:** The per-trade cost is similar. The `lockMarket()` cost increases due to the larger iteration loop, but the simpler arithmetic (no `mulDiv`) partially offsets this.
 
 ---
 
-## 13. V1 Compatibility Analysis
+## 15. V1 Compatibility Analysis
 
 Stage 6.6 is a **Security Hardening Extension** that replaces only the Settlement Observation Algorithm. The following V1 frozen rules are **entirely unchanged**:
 
@@ -168,15 +211,14 @@ Stage 6.6 is a **Security Hardening Extension** that replaces only the Settlemen
 -   **`FeeManager.sol`:** 1% fee, 50/30/20 split — untouched.
 -   **`MarketVault.sol`:** Asset custody, invariants — untouched.
 -   **`SettlementManager.sol`:** >5000 FOR_WINS, <5000 AGAINST_WINS, =5000 DRAW, payout formulas — untouched.
-
-The only component modified is the algorithm used to produce the single `finalTWAP` value that feeds into the unchanged settlement logic.
+-   **Market Lifecycle State Machine:** ACTIVE → LOCKED → SETTLEMENT → CLAIMABLE — untouched.
 
 ---
 
-## 14. Implementation Scope
+## 16. Implementation Scope
 
 **Files requiring modification:**
--   `contracts/libraries/TWAPLibrary.sol` — Full rewrite of slot logic, Fill-Forward, T_stop generation, and packed storage.
+-   `contracts/libraries/TWAPLibrary.sol` — Full rewrite of slot logic, Historical Slot Immutability, Fill-Forward, T_stop generation, and packed storage.
 -   `contracts/TradingEngine.sol` — Minor updates to pass slot context during trades and block context at lock time.
 -   `contracts/interfaces/ITradingEngine.sol` — Update `TWAPState` struct definition.
 -   `test/` — Update existing TWAP tests and add Stage 6.6 security tests.
