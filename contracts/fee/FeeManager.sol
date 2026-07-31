@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import { IFeeManager }   from "../interfaces/IFeeManager.sol";
 import { IPulseFactory } from "../interfaces/IPulseFactory.sol";
 import { IMarketVault }  from "../interfaces/IMarketVault.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @title FeeManager
 /// @notice Protocol fee accounting and distribution module for Pulse Protocol V1.
@@ -37,7 +38,8 @@ import { IMarketVault }  from "../interfaces/IMarketVault.sol";
 ///      - Only the configured team address may call claimTeamFee()
 ///      - CEI pattern prevents reentrancy in all claim functions
 ///      - Vault-layer quota protection prevents over-release even if FeeManager is buggy
-contract FeeManager is IFeeManager {
+/// @dev Stage 7 RC Hardening: Added ReentrancyGuard as defense-in-depth.
+contract FeeManager is IFeeManager, ReentrancyGuard {
 
     // ─────────────────────────────────────────────────────────────────────────
     // Constants — Fee Split (Fixed per SSOT)
@@ -166,7 +168,7 @@ contract FeeManager is IFeeManager {
     ///        1. CHECK  — caller is the View's Creator, pending > 0
     ///        2. EFFECT — zero the pending balance (prevents reentrancy double-claim)
     ///        3. INTERACT — call Vault.releaseFee() to transfer tokens to creator
-    function claimCreatorFee(uint256 viewId) external override {
+    function claimCreatorFee(uint256 viewId) external override nonReentrant {
         // Resolve creator from Factory (immutable per View)
         IPulseFactory.ViewRecord memory view_ = factory.getView(viewId);
         address creator = view_.creator;
@@ -193,7 +195,7 @@ contract FeeManager is IFeeManager {
     ///        1. CHECK  — caller is treasury, pending > 0
     ///        2. EFFECT — zero the pending balance
     ///        3. INTERACT — call Vault.releaseFee()
-    function claimTreasuryFee(uint256 viewId) external override {
+    function claimTreasuryFee(uint256 viewId) external override nonReentrant {
         if (msg.sender != treasury) revert FeeManager__UnauthorisedCaller();
 
         uint256 amount = _pendingTreasuryFees[viewId];
@@ -215,7 +217,7 @@ contract FeeManager is IFeeManager {
     ///        1. CHECK  — caller is team, pending > 0
     ///        2. EFFECT — zero the pending balance
     ///        3. INTERACT — call Vault.releaseFee()
-    function claimTeamFee(uint256 viewId) external override {
+    function claimTeamFee(uint256 viewId) external override nonReentrant {
         if (msg.sender != team) revert FeeManager__UnauthorisedCaller();
 
         uint256 amount = _pendingTeamFees[viewId];

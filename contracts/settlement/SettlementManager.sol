@@ -6,6 +6,7 @@ import { ITradingEngine }     from "../interfaces/ITradingEngine.sol";
 import { IPulseFactory }      from "../interfaces/IPulseFactory.sol";
 import { IMarketVault }       from "../interfaces/IMarketVault.sol";
 import { MathLibrary }        from "../libraries/MathLibrary.sol";
+import { ReentrancyGuard }    from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @title SettlementManager
 /// @notice Market settlement and reward claim module for Pulse Protocol V1.
@@ -41,7 +42,8 @@ import { MathLibrary }        from "../libraries/MathLibrary.sol";
 ///      - Payout ALWAYS goes to the position holder (user), never to msg.sender
 ///      - claimed[viewId][user] prevents double-claim
 ///      - CEI pattern: markPositionClaimed() called before Vault.settle()
-contract SettlementManager is ISettlementManager {
+/// @dev Stage 7 RC Hardening: Added ReentrancyGuard as defense-in-depth.
+contract SettlementManager is ISettlementManager, ReentrancyGuard {
 
     // ─────────────────────────────────────────────────────────────────────────
     // Constants
@@ -97,7 +99,7 @@ contract SettlementManager is ISettlementManager {
     ///        5. Store result
     ///        6. Call TradingEngine.setStatusClaimable() — SETTLEMENT → CLAIMABLE
     ///        7. Emit MarketSettled
-    function settleMarket(uint256 viewId) external override {
+    function settleMarket(uint256 viewId) external override nonReentrant {
         // Check: market must be LOCKED
         ITradingEngine.MarketStatus status = tradingEngine.getMarketStatus(viewId);
         if (status != ITradingEngine.MarketStatus.LOCKED) {
@@ -142,7 +144,7 @@ contract SettlementManager is ISettlementManager {
     ///        1. CHECK  — CLAIMABLE status, user has position, not already claimed
     ///        2. EFFECT — TradingEngine.markPositionClaimed() (prevents double-claim)
     ///        3. INTERACT — Vault.settle(user, amount)
-    function claimReward(uint256 viewId, address user) external override {
+    function claimReward(uint256 viewId, address user) external override nonReentrant {
         // Check: market must be CLAIMABLE
         ITradingEngine.MarketStatus status = tradingEngine.getMarketStatus(viewId);
         if (status != ITradingEngine.MarketStatus.CLAIMABLE) {
