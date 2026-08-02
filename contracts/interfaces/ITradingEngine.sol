@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import { IPriceEngine } from "./IPriceEngine.sol";
+import { IPulseFactory } from "./IPulseFactory.sol";
 
 /// @title ITradingEngine
 /// @notice Interface for the shared trading execution layer of Pulse Protocol V1.
@@ -160,6 +161,24 @@ interface ITradingEngine {
     /// @notice Thrown when a function stub has not yet been implemented (Round 2/3 stubs).
     error TradingEngine__NotImplemented();
 
+    /// @notice Thrown when initializeMarketState is called on an already-initialised market.
+    error TradingEngine__AlreadyInitialised(uint256 viewId);
+
+    /// @notice Thrown when the caller is not the authorised Factory.
+    error TradingEngine__UnauthorisedFactory();
+
+    /// @notice Thrown when the total initial liquidity is below the protocol minimum.
+    error TradingEngine__InsufficientInitialLiquidity(uint256 provided, uint256 minimum);
+
+    /// @notice Thrown when the LiquidityAllocation array is empty.
+    error TradingEngine__EmptyAllocation();
+
+    /// @notice Thrown when the sum of allocation amounts does not match the declared totals.
+    error TradingEngine__AllocationMismatch();
+
+    /// @notice Thrown when a LiquidityAllocation entry has a zero user address.
+    error TradingEngine__InvalidAllocationUser();
+
     /// @notice Thrown when PriceEngine returns an invalid output (zero shares, zero amount, or illegal index).
     error TradingEngine__InvalidPriceEngineOutput(uint256 viewId);
 
@@ -172,6 +191,37 @@ interface ITradingEngine {
     // ─────────────────────────────────────────────────────────────────────────
     // State-Changing Functions
     // ─────────────────────────────────────────────────────────────────────────
+
+    /// @notice Initialise the MarketState and distribute initial Position Shares to participants.
+    /// @dev ONLY callable by the authorised PulseFactory during View creation.
+    ///      Executes atomically as part of the createView / createViewWithInitialAllocation flow.
+    ///
+    ///      Initialisation formula (fixed, immutable):
+    ///        forShares  = yesLiquidity * 2
+    ///        noShares   = noLiquidity  * 2
+    ///
+    ///      Core validates:
+    ///        - Caller is PulseFactory
+    ///        - Market has not been previously initialised (status must be default)
+    ///        - totalYesLiquidity + totalNoLiquidity >= MIN_INITIAL_LIQUIDITY
+    ///        - allocations.length > 0
+    ///        - No user == address(0) in allocations
+    ///        - No entry with yesLiquidity == 0 && noLiquidity == 0
+    ///        - sum(alloc.yesLiquidity) == totalYesLiquidity
+    ///        - sum(alloc.noLiquidity)  == totalNoLiquidity
+    ///
+    ///      Core does NOT validate application-layer rules (e.g. 50/50 split, minimum deposit requirements).
+    ///
+    /// @param viewId              The ViewID being initialised.
+    /// @param totalYesLiquidity   Total YES-side USDT deposited.
+    /// @param totalNoLiquidity    Total NO-side USDT deposited.
+    /// @param allocations         Per-user USDT contribution breakdown.
+    function initializeMarketState(
+        uint256 viewId,
+        uint256 totalYesLiquidity,
+        uint256 totalNoLiquidity,
+        IPulseFactory.LiquidityAllocation[] calldata allocations
+    ) external;
 
     /// @notice Buy a For or Against position in a View.
     /// @dev Requires market status == ACTIVE.
