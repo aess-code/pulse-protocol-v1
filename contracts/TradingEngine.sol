@@ -122,7 +122,7 @@ contract TradingEngine is ITradingEngine, ReentrancyGuard {
 
         // ── Load state and ViewRecord (minimal fields) ────────────────────────
         MarketState storage state = marketStates[viewId];
-        (address creator, , address vaultAddr, uint256 endTime) = _getViewFields(viewId);
+        (address feeRecipient, , address vaultAddr, uint256 endTime) = _getViewFields(viewId);
         if (vaultAddr == address(0)) revert TradingEngine__VaultNotFound(viewId);
 
         // ── 2. Pricing Calculation (Delegate to PriceEngine) ─────────────────
@@ -151,7 +151,7 @@ contract TradingEngine is ITradingEngine, ReentrancyGuard {
         if (sharesOut < minSharesOut) revert TradingEngine__SlippageExceeded(sharesOut, minSharesOut);
 
         // ── 4. Fee Accounting (Delegate to FeeManager — no token transfer) ───
-        feeManager.recordFee(viewId, creator, totalFee);
+        feeManager.recordFee(viewId, feeRecipient, totalFee);
 
         // ── 5. Effects (Internal State Updates — before Interactions) ─────────
         if (side == 0) {
@@ -212,7 +212,7 @@ contract TradingEngine is ITradingEngine, ReentrancyGuard {
 
         // ── Load state and ViewRecord (minimal fields) ────────────────────────
         MarketState storage state = marketStates[viewId];
-        (address creator, , address vaultAddr, uint256 endTime) = _getViewFields(viewId);
+        (address feeRecipient, , address vaultAddr, uint256 endTime) = _getViewFields(viewId);
         if (vaultAddr == address(0)) revert TradingEngine__VaultNotFound(viewId);
 
         // ── 2. Pricing Calculation (Delegate to PriceEngine) ─────────────────
@@ -239,7 +239,7 @@ contract TradingEngine is ITradingEngine, ReentrancyGuard {
         // ── 4. Fee Accounting (Delegate to FeeManager — no token transfer) ───
         uint256 totalFee    = MathLibrary.applyBps(amountOut, FEE_BPS);
         uint256 netAmountOut = amountOut - totalFee;
-        feeManager.recordFee(viewId, creator, totalFee);
+        feeManager.recordFee(viewId, feeRecipient, totalFee);
 
         // ── 5. Effects (Internal State Updates — before Interactions) ─────────
         if (side == 0) {
@@ -460,18 +460,29 @@ contract TradingEngine is ITradingEngine, ReentrancyGuard {
     }
 
     /// @notice Returns fields needed from a ViewRecord (Fix ⑦: avoids full struct copy).
-    /// @dev Reads creator, viewType, vault, and endTime from the Factory. Includes existence check.
-    /// @return creator  Address of the View's creator.
-    /// @return viewType Type of the View (FIXED/PERMANENT).
-    /// @return vault    Address of the View's MarketVault.
-    /// @return endTime  Unix timestamp of the View's end time.
+    /// @dev Reads feeRecipient, viewType, vault, and endTime from the Factory. Includes existence check.
+    /// @return feeRecipient  Address of the View's FeeRecipient.
+    /// @return viewType      Type of the View (FIXED/PERMANENT).
+    /// @return vault         Address of the View's MarketVault.
+    /// @return endTime       Unix timestamp of the View's end time.
     function _getViewFields(uint256 viewId)
         internal
         view
-        returns (address creator, IPulseFactory.ViewType viewType, address vault, uint256 endTime)
+        returns (address feeRecipient, IPulseFactory.ViewType viewType, address vault, uint256 endTime)
     {
         _requireViewExists(viewId);
         IPulseFactory.ViewRecord memory r = factory.getView(viewId);
-        return (r.creator, r.viewType, r.vault, r.endTime);
+        return (r.feeRecipient, r.viewType, r.vault, r.endTime);
+    }
+
+    /// @inheritdoc ITradingEngine
+    /// @dev Full implementation is in Step 3. This stub satisfies the interface requirement.
+    function initializeMarketState(
+        uint256 /* viewId */,
+        uint256 /* totalYesLiquidity */,
+        uint256 /* totalNoLiquidity */,
+        IPulseFactory.LiquidityAllocation[] calldata /* allocations */
+    ) external pure override {
+        revert TradingEngine__NotImplemented();
     }
 }

@@ -5,6 +5,8 @@ import { IPulseFactory }       from "../interfaces/IPulseFactory.sol";
 import { IMarketVaultFactory } from "../interfaces/IMarketVaultFactory.sol";
 import { IMarketVault }        from "../interfaces/IMarketVault.sol";
 import { ITradingEngine }      from "../interfaces/ITradingEngine.sol";
+import { IERC20 }              from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeERC20 }           from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @title PulseFactory
 /// @notice The sole entry point for creating Views in Pulse Protocol V1.
@@ -15,17 +17,21 @@ import { ITradingEngine }      from "../interfaces/ITradingEngine.sol";
 ///      It maintains the global registry (Single Source of Truth) for all Views.
 ///
 ///      View Creation Flow (atomic):
-///        1. Validate all parameters
+///        1. Validate parameters (feeRecipient, metadata, time, minimum liquidity)
 ///        2. Generate ViewID (auto-incrementing)
 ///        3. Deploy MarketVault via MarketVaultFactory
 ///        4. Call MarketVault.setFeeManager() to register FeeManager authorization
 ///        5. Register ViewRecord in the global registry
-///        6. Emit ViewCreated
+///        6. Transfer initial liquidity from caller directly to Vault (one-step, no custody)
+///        7. Call TradingEngine.initializeMarketState() to set up Shares and Positions
+///        8. Emit ViewCreated
 ///
 ///      Invariants:
 ///        - One View = One Vault (enforced by MarketVaultFactory)
 ///        - ViewRecord fields are immutable after creation
 ///        - ViewID is globally unique and monotonically increasing
+///        - Factory never holds, approves, or re-transfers tokens
+///        - Factory never computes Shares (all math is in TradingEngine)
 ///
 ///      ── Time Constraints (Stage 4.5 Hardening) ────────────────────────────
 ///      For FIXED views:
@@ -33,6 +39,7 @@ import { ITradingEngine }      from "../interfaces/ITradingEngine.sol";
 ///        where SETTLEMENT_WINDOW = 60 minutes (Stage 6.6), MIN_TRADING_DURATION = 30 minutes
 ///        Minimum total duration: 90 minutes
 contract PulseFactory is IPulseFactory {
+    using SafeERC20 for IERC20;
 
     // ─────────────────────────────────────────────────────────────────────────
     // Constants
@@ -70,6 +77,11 @@ contract PulseFactory is IPulseFactory {
     /// @notice The settlement token (ERC20) used for all Views.
     address public immutable settlementToken;
 
+    /// @notice Minimum total initial liquidity (YES + NO) required to create a View.
+    /// @dev Expressed in settlement token units (e.g. 100 * 10^6 for 100 USDT with 6 decimals).
+    ///      Validated by Factory before Vault deployment. TradingEngine does not re-check this.
+    uint256 public immutable MIN_INITIAL_LIQUIDITY;
+
     // ─────────────────────────────────────────────────────────────────────────
     // State Variables
     // ─────────────────────────────────────────────────────────────────────────
@@ -83,31 +95,27 @@ contract PulseFactory is IPulseFactory {
     /// @notice Tracks which ViewIDs exist.
     mapping(uint256 => bool) private _exists;
 
-    /// @notice Creator → list of ViewIDs they created.
-    mapping(address => uint256[]) private _creatorViews;
-
-    /// @notice Tracks registered creators.
-    mapping(address => bool) private _registeredCreators;
-
-    /// @notice Total number of unique creators.
-    uint256 private _totalCreators;
+    /// @notice FeeRecipient → list of ViewIDs associated with this FeeRecipient.
+    mapping(address => uint256[]) private _feeRecipientViews;
 
     // ─────────────────────────────────────────────────────────────────────────
     // Constructor
     // ─────────────────────────────────────────────────────────────────────────
 
     /// @notice Deploy the PulseFactory.
-    /// @param _vaultFactory      Address of the MarketVaultFactory.
-    /// @param _tradingEngine     Address of the shared TradingEngine.
-    /// @param _settlementManager Address of the shared SettlementManager.
-    /// @param _feeManager        Address of the shared FeeManager.
-    /// @param _settlementToken   Address of the ERC20 settlement token.
+    /// @param _vaultFactory         Address of the MarketVaultFactory.
+    /// @param _tradingEngine        Address of the shared TradingEngine.
+    /// @param _settlementManager    Address of the shared SettlementManager.
+    /// @param _feeManager           Address of the shared FeeManager.
+    /// @param _settlementToken      Address of the ERC20 settlement token.
+    /// @param _minInitialLiquidity  Minimum total initial liquidity (YES + NO) in token units.
     constructor(
         address _vaultFactory,
         address _tradingEngine,
         address _settlementManager,
         address _feeManager,
-        address _settlementToken
+        address _settlementToken,
+        uint256 _minInitialLiquidity
     ) {
         if (_vaultFactory      == address(0)) revert Factory__InvalidModuleAddress();
         if (_tradingEngine     == address(0)) revert Factory__InvalidModuleAddress();
@@ -115,11 +123,12 @@ contract PulseFactory is IPulseFactory {
         if (_feeManager        == address(0)) revert Factory__InvalidModuleAddress();
         if (_settlementToken   == address(0)) revert Factory__InvalidModuleAddress();
 
-        vaultFactory      = IMarketVaultFactory(_vaultFactory);
-        tradingEngine     = _tradingEngine;
-        settlementManager = _settlementManager;
-        feeManager        = _feeManager;
-        settlementToken   = _settlementToken;
+        vaultFactory          = IMarketVaultFactory(_vaultFactory);
+        tradingEngine         = _tradingEngine;
+        settlementManager     = _settlementManager;
+        feeManager            = _feeManager;
+        settlementToken       = _settlementToken;
+        MIN_INITIAL_LIQUIDITY = _minInitialLiquidity;
 
         _nextViewId = 1; // ViewIDs start at 1
     }
@@ -129,108 +138,64 @@ contract PulseFactory is IPulseFactory {
     // ─────────────────────────────────────────────────────────────────────────
 
     /// @inheritdoc IPulseFactory
-    /// @dev Atomically validates, deploys Vault, registers FeeManager, and records ViewRecord.
-    ///      Any failure reverts the entire transaction — no partial state is possible.
+    /// @dev Wrapper for direct EOA use. Automatically sets feeRecipient = msg.sender
+    ///      and constructs a single-element LiquidityAllocation before routing to
+    ///      _createViewInternal(). No independent creation logic exists here.
     function createView(
         ViewType viewType,
         string  calldata metadataURI,
         bytes32          metadataHash,
         uint256          startTime,
-        uint256          endTime
+        uint256          endTime,
+        uint256          initialYesLiquidity,
+        uint256          initialNoLiquidity
     ) external override returns (uint256 viewId) {
-        // ── Checks ────────────────────────────────────────────────────────────
-
-        if (msg.sender == address(0))         revert Factory__InvalidCreator();
-        if (bytes(metadataURI).length == 0)   revert Factory__InvalidMetadata();
-
-        // Validate ViewType
-        if (uint256(viewType) > 1)            revert Factory__InvalidViewType();
-
-        // Validate time parameters
-        if (startTime == 0) startTime = block.timestamp;
-
-        if (viewType == ViewType.FIXED) {
-            if (endTime == 0 || endTime <= startTime) revert Factory__InvalidTimeRange();
-            if (endTime < startTime + MIN_MARKET_DURATION) revert Factory__DurationTooShort();
-        } else {
-            // PERMANENT views must have zero endTime
-            if (endTime != 0) revert Factory__PermanentViewMustHaveZeroEndTime();
-        }
-
-        // ── Effects ───────────────────────────────────────────────────────────
-
-        // Assign ViewID
-        viewId = _nextViewId++;
-
-        // ── Interactions ──────────────────────────────────────────────────────
-
-        // Deploy MarketVault for this View
-        address vault = vaultFactory.deployVault(
-            viewId,
-            tradingEngine,
-            settlementManager,
-            settlementToken
-        );
-        if (vault == address(0)) revert Factory__VaultDeploymentFailed();
-
-        // Register FeeManager as authorized on the Vault
-        // The Vault's setFeeManager is guarded by onlyTradingEngine.
-        // PulseFactory calls this via TradingEngine's authorization.
-        // In V1, TradingEngine is the authorized caller for setFeeManager.
-        // We call it directly here because PulseFactory is the deployer and
-        // the Vault's authorizedTradingEngine is already set to tradingEngine.
-        // We use a low-level call to avoid tight coupling.
-        // Note: In production, the Factory must be the authorized caller for setFeeManager
-        // OR the TradingEngine must expose a factory-only initialization hook.
-        // For V1, we call setFeeManager directly since the Vault's guard allows
-        // the TradingEngine address, and we route through it.
-        //
-        // ARCHITECTURAL NOTE: The Vault.setFeeManager() is guarded by onlyTradingEngine.
-        // PulseFactory cannot call it directly. Instead, we call it via a low-level call
-        // impersonating the TradingEngine, which is not possible in production.
-        //
-        // RESOLUTION: We change the Vault's setFeeManager guard to allow EITHER the
-        // TradingEngine OR the Factory (the deployer). This is safe because:
-        //   - Factory is immutable and set at Vault construction time
-        //   - setFeeManager can only be called once
-        //   - Factory is trusted as the deployment coordinator
-        //
-        // This requires a small update to MarketVault.setFeeManager().
-        // For now, we call it directly and rely on the Vault accepting the Factory
-        // as an authorized caller for the one-time initialization.
-        IMarketVault(vault).setFeeManager(feeManager);
-
-        // Register ViewRecord
-        _views[viewId] = ViewRecord({
-            viewId:            viewId,
-            creator:           msg.sender,
-            viewType:          viewType,
-            metadataURI:       metadataURI,
-            metadataHash:      metadataHash,
-            createdAt:         block.timestamp,
-            startTime:         startTime,
-            endTime:           endTime,
-            vault:             vault,
-            priceEngine:       address(ITradingEngine(tradingEngine).priceEngine()),
-            settlementManager: settlementManager,
-            feeConfig:         FeeConfig({
-                totalBps:    100,
-                creatorBps:  50,
-                treasuryBps: 30,
-                teamBps:     20
-            })
+        LiquidityAllocation[] memory allocs = new LiquidityAllocation[](1);
+        allocs[0] = LiquidityAllocation({
+            user:         msg.sender,
+            yesLiquidity: initialYesLiquidity,
+            noLiquidity:  initialNoLiquidity
         });
-        _exists[viewId] = true;
 
-        // Track creator
-        _creatorViews[msg.sender].push(viewId);
-        if (!_registeredCreators[msg.sender]) {
-            _registeredCreators[msg.sender] = true;
-            _totalCreators++;
-            emit CreatorRegistered(msg.sender);
-        }
+        return _createViewInternal(
+            viewType,
+            metadataURI,
+            metadataHash,
+            startTime,
+            endTime,
+            msg.sender, // feeRecipient is always the caller for the simple entry point
+            initialYesLiquidity,
+            initialNoLiquidity,
+            allocs
+        );
+    }
 
-        emit ViewCreated(viewId, msg.sender, viewType, vault, endTime);
+    /// @inheritdoc IPulseFactory
+    /// @dev For use by External Modules (e.g. GE, DAO Launchpad). Allows specifying
+    ///      a feeRecipient and a multi-participant LiquidityAllocation array.
+    ///      All Allocation validation is performed inside TradingEngine.initializeMarketState().
+    function createViewWithInitialAllocation(
+        ViewType viewType,
+        string  calldata metadataURI,
+        bytes32          metadataHash,
+        uint256          startTime,
+        uint256          endTime,
+        address          feeRecipient,
+        uint256          totalYesLiquidity,
+        uint256          totalNoLiquidity,
+        LiquidityAllocation[] calldata allocations
+    ) external override returns (uint256 viewId) {
+        return _createViewInternal(
+            viewType,
+            metadataURI,
+            metadataHash,
+            startTime,
+            endTime,
+            feeRecipient,
+            totalYesLiquidity,
+            totalNoLiquidity,
+            allocations
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -261,13 +226,13 @@ contract PulseFactory is IPulseFactory {
     }
 
     /// @inheritdoc IPulseFactory
-    function getCreatorViews(address creator)
+    function getFeeRecipientViews(address feeRecipient)
         external
         view
         override
         returns (uint256[] memory viewIds)
     {
-        return _creatorViews[creator];
+        return _feeRecipientViews[feeRecipient];
     }
 
     /// @inheritdoc IPulseFactory
@@ -276,7 +241,127 @@ contract PulseFactory is IPulseFactory {
     }
 
     /// @inheritdoc IPulseFactory
-    function totalCreators() external view override returns (uint256) {
-        return _totalCreators;
+    function totalFeeRecipients() external pure override returns (uint256) {
+        // FeeRecipient count is not tracked to avoid unnecessary storage overhead.
+        // This function is retained for interface compatibility and returns 0.
+        return 0;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Internal Implementation
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// @notice Core internal implementation for all View creation paths.
+    /// @dev Both createView() and createViewWithInitialAllocation() route here.
+    ///      This is the single source of truth for the creation logic.
+    ///
+    ///      Execution order:
+    ///        1. Validate: feeRecipient, metadata, viewType, time constraints, min liquidity
+    ///        2. Assign ViewID
+    ///        3. Deploy MarketVault
+    ///        4. Register FeeManager on Vault
+    ///        5. Register ViewRecord
+    ///        6. Transfer total liquidity from msg.sender directly to Vault (no custody)
+    ///        7. Call TradingEngine.initializeMarketState() (Allocation validation + Shares + Positions)
+    ///        8. Emit ViewCreated
+    ///
+    ///      Atomicity: if step 7 reverts, the entire transaction reverts including step 6.
+    ///      Factory never holds tokens at any point.
+    function _createViewInternal(
+        ViewType viewType,
+        string  memory  metadataURI,
+        bytes32         metadataHash,
+        uint256         startTime,
+        uint256         endTime,
+        address         feeRecipient,
+        uint256         totalYesLiquidity,
+        uint256         totalNoLiquidity,
+        LiquidityAllocation[] memory allocations
+    ) internal returns (uint256 viewId) {
+        // ── Checks ────────────────────────────────────────────────────────────
+
+        if (feeRecipient == address(0))       revert Factory__InvalidFeeRecipient();
+        if (bytes(metadataURI).length == 0)   revert Factory__InvalidMetadata();
+        if (uint256(viewType) > 1)            revert Factory__InvalidViewType();
+
+        // Validate time parameters
+        if (startTime == 0) startTime = block.timestamp;
+
+        if (viewType == ViewType.FIXED) {
+            if (endTime == 0 || endTime <= startTime) revert Factory__InvalidTimeRange();
+            if (endTime < startTime + MIN_MARKET_DURATION) revert Factory__DurationTooShort();
+        } else {
+            if (endTime != 0) revert Factory__PermanentViewMustHaveZeroEndTime();
+        }
+
+        // Validate minimum initial liquidity (YES + NO total)
+        uint256 totalLiquidity = totalYesLiquidity + totalNoLiquidity;
+        if (totalLiquidity < MIN_INITIAL_LIQUIDITY) {
+            revert Factory__InsufficientInitialLiquidity(totalLiquidity, MIN_INITIAL_LIQUIDITY);
+        }
+
+        // ── Effects ───────────────────────────────────────────────────────────
+
+        viewId = _nextViewId++;
+
+        // ── Interactions ──────────────────────────────────────────────────────
+
+        // Deploy MarketVault for this View
+        address vault = vaultFactory.deployVault(
+            viewId,
+            tradingEngine,
+            settlementManager,
+            settlementToken
+        );
+        if (vault == address(0)) revert Factory__VaultDeploymentFailed();
+
+        // Register FeeManager as authorized on the Vault
+        IMarketVault(vault).setFeeManager(feeManager);
+
+        // Register ViewRecord (immutable after this point)
+        _views[viewId] = ViewRecord({
+            viewId:            viewId,
+            feeRecipient:      feeRecipient,
+            viewType:          viewType,
+            metadataURI:       metadataURI,
+            metadataHash:      metadataHash,
+            createdAt:         block.timestamp,
+            startTime:         startTime,
+            endTime:           endTime,
+            vault:             vault,
+            priceEngine:       address(ITradingEngine(tradingEngine).priceEngine()),
+            settlementManager: settlementManager,
+            feeConfig:         FeeConfig({
+                totalBps:        100,
+                feeRecipientBps: 7000,
+                treasuryBps:     2000,
+                teamBps:         1000
+            })
+        });
+        _exists[viewId] = true;
+
+        // Track FeeRecipient → ViewID association
+        _feeRecipientViews[feeRecipient].push(viewId);
+
+        // Transfer total liquidity from caller directly to Vault (one-step, no custody)
+        // Factory never holds tokens. If initializeMarketState() reverts below,
+        // the entire transaction reverts and this transfer is also rolled back.
+        if (totalLiquidity > 0) {
+            IERC20(settlementToken).safeTransferFrom(msg.sender, vault, totalLiquidity);
+        }
+
+        // Initialize MarketState and distribute Position Shares via TradingEngine.
+        // All Allocation validation (non-empty, no zero address, no double-zero, sum check)
+        // is performed inside initializeMarketState(). Factory does not re-validate.
+        // All Share computation (shares = liquidity * 2) is performed inside TradingEngine.
+        // Factory does not perform any mathematical operations.
+        ITradingEngine(tradingEngine).initializeMarketState(
+            viewId,
+            totalYesLiquidity,
+            totalNoLiquidity,
+            allocations
+        );
+
+        emit ViewCreated(viewId, feeRecipient, viewType, vault, endTime);
     }
 }

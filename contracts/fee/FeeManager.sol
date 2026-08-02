@@ -104,9 +104,9 @@ contract FeeManager is IFeeManager, ReentrancyGuard {
         address _team
     ) {
         if (_authorizedTradingEngine == address(0)) revert FeeManager__UnauthorisedCaller();
-        if (_factory                 == address(0)) revert FeeManager__InvalidCreator();
-        if (_treasury                == address(0)) revert FeeManager__InvalidCreator();
-        if (_team                    == address(0)) revert FeeManager__InvalidCreator();
+        if (_factory                 == address(0)) revert FeeManager__InvalidFeeRecipient();
+        if (_treasury                == address(0)) revert FeeManager__InvalidFeeRecipient();
+        if (_team                    == address(0)) revert FeeManager__InvalidFeeRecipient();
         authorizedTradingEngine = _authorizedTradingEngine;
         factory                 = IPulseFactory(_factory);
         treasury                = _treasury;
@@ -140,7 +140,7 @@ contract FeeManager is IFeeManager, ReentrancyGuard {
         uint256 totalFee
     ) external override onlyTradingEngine {
         if (totalFee == 0)          revert FeeManager__ZeroFee();
-        if (creator  == address(0)) revert FeeManager__InvalidCreator();
+        if (creator  == address(0)) revert FeeManager__InvalidFeeRecipient();
 
         // Split fee: creator 50%, treasury 30%, team absorbs remainder (dust)
         uint256 creatorFee  = (totalFee * CREATOR_SHARE_BPS)  / 100;
@@ -168,24 +168,24 @@ contract FeeManager is IFeeManager, ReentrancyGuard {
     ///        1. CHECK  — caller is the View's Creator, pending > 0
     ///        2. EFFECT — zero the pending balance (prevents reentrancy double-claim)
     ///        3. INTERACT — call Vault.releaseFee() to transfer tokens to creator
-    function claimCreatorFee(uint256 viewId) external override nonReentrant {
-        // Resolve creator from Factory (immutable per View)
+    function claimFeeRecipientFee(uint256 viewId) external override nonReentrant {
+        // Resolve feeRecipient from Factory (immutable per View)
         IPulseFactory.ViewRecord memory view_ = factory.getView(viewId);
-        address creator = view_.creator;
+        address feeRecipient = view_.feeRecipient;
 
-        // Only the View's Creator may claim
-        if (msg.sender != creator) revert FeeManager__UnauthorisedCaller();
+        // Only the View's FeeRecipient may claim
+        if (msg.sender != feeRecipient) revert FeeManager__UnauthorisedCaller();
 
-        uint256 amount = _pendingCreatorFees[viewId][creator];
+        uint256 amount = _pendingCreatorFees[viewId][feeRecipient];
         if (amount == 0) revert FeeManager__NothingToClaim();
 
         // CEI: zero ledger before external interaction
-        _pendingCreatorFees[viewId][creator] = 0;
+        _pendingCreatorFees[viewId][feeRecipient] = 0;
 
         // Release from Vault
-        IMarketVault(view_.vault).releaseFee(creator, amount);
+        IMarketVault(view_.vault).releaseFee(feeRecipient, amount);
 
-        emit CreatorFeeClaimed(viewId, creator, amount);
+        emit FeeRecipientClaimed(viewId, feeRecipient, amount);
     }
 
     /// @inheritdoc IFeeManager
@@ -237,13 +237,13 @@ contract FeeManager is IFeeManager, ReentrancyGuard {
     // ─────────────────────────────────────────────────────────────────────────
 
     /// @inheritdoc IFeeManager
-    function pendingCreatorFees(uint256 viewId, address creator)
+    function pendingFeeRecipientFees(uint256 viewId, address feeRecipient)
         external
         view
         override
         returns (uint256)
     {
-        return _pendingCreatorFees[viewId][creator];
+        return _pendingCreatorFees[viewId][feeRecipient];
     }
 
     /// @inheritdoc IFeeManager
