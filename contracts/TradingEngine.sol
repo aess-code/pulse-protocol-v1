@@ -476,13 +476,108 @@ contract TradingEngine is ITradingEngine, ReentrancyGuard {
     }
 
     /// @inheritdoc ITradingEngine
-    /// @dev Full implementation is in Step 3. This stub satisfies the interface requirement.
+    /// @dev Initialises the MarketState and distributes initial Position Shares to participants.
+    ///      ONLY callable by the authorised PulseFactory.
+    ///
+    ///      Execution order (strict CEI):
+    ///        1. Checks: caller, one-time lock, view existence, allocation validity
+    ///        2. Effects: write Positions and MarketState
+    ///        3. Event: PulseIndexUpdated
+    ///
+    ///      Share formula (single source of truth via _liquidityToShares):
+    ///        forShares  = _liquidityToShares(yesLiquidity)
+    ///        noShares   = _liquidityToShares(noLiquidity)
+    ///
+    ///      Duplicate user addresses in allocations are allowed and safe;
+    ///      Position shares are accumulated with += across all entries.
     function initializeMarketState(
-        uint256 /* viewId */,
-        uint256 /* totalYesLiquidity */,
-        uint256 /* totalNoLiquidity */,
-        IPulseFactory.LiquidityAllocation[] calldata /* allocations */
-    ) external pure override {
-        revert TradingEngine__NotImplemented();
+        uint256 viewId,
+        uint256 totalYesLiquidity,
+        uint256 totalNoLiquidity,
+        IPulseFactory.LiquidityAllocation[] calldata allocations
+    ) external override nonReentrant {
+        // ── 1. Checks ────────────────────────────────────────────────────────
+
+        // Only the authorised Factory may call this function
+        if (msg.sender != address(factory)) revert TradingEngine__UnauthorisedFactory();
+
+        // One-time initialization lock: lastPulseIndex is 0 only before initialization.
+        // After initialization it is set to INITIAL_INDEX (5000) and can never return to 0.
+        MarketState storage state = marketStates[viewId];
+        if (state.lastPulseIndex != 0) revert TradingEngine__AlreadyInitialised(viewId);
+
+        // ViewID must exist in the Factory registry
+        _requireViewExists(viewId);
+
+        // Allocation array must not be empty
+        if (allocations.length == 0) revert TradingEngine__EmptyAllocation();
+
+        // ── Allocation Validation Pass ────────────────────────────────────────
+        // Single-pass: validate each entry and accumulate liquidity sums.
+        // Duplicate user addresses are allowed; += handles them correctly.
+        uint256 sumYesLiquidity;
+        uint256 sumNoLiquidity;
+
+        for (uint256 i = 0; i < allocations.length; ) {
+            IPulseFactory.LiquidityAllocation calldata alloc = allocations[i];
+
+            // User address must not be zero
+            if (alloc.user == address(0)) revert TradingEngine__InvalidAllocationUser();
+
+            // At least one side must have a non-zero contribution
+            if (alloc.yesLiquidity == 0 && alloc.noLiquidity == 0) {
+                revert TradingEngine__AllocationMismatch();
+            }
+
+            sumYesLiquidity += alloc.yesLiquidity;
+            sumNoLiquidity  += alloc.noLiquidity;
+
+            unchecked { ++i; }
+        }
+
+        // Verify allocation sums match declared totals
+        if (sumYesLiquidity != totalYesLiquidity) revert TradingEngine__AllocationMismatch();
+        if (sumNoLiquidity  != totalNoLiquidity)  revert TradingEngine__AllocationMismatch();
+
+        // ── 2. Effects ────────────────────────────────────────────────────────
+
+        // Distribute Position Shares to each participant.
+        // Uses += to correctly handle duplicate user addresses.
+        for (uint256 i = 0; i < allocations.length; ) {
+            IPulseFactory.LiquidityAllocation calldata alloc = allocations[i];
+            Position storage pos = positions[viewId][alloc.user];
+
+            pos.forShares     += _liquidityToShares(alloc.yesLiquidity);
+            pos.againstShares += _liquidityToShares(alloc.noLiquidity);
+            pos.lastUpdate     = block.timestamp;
+
+            unchecked { ++i; }
+        }
+
+        // Initialize MarketState — one atomic write covering all fields.
+        state.forSupply          = _liquidityToShares(totalYesLiquidity);
+        state.againstSupply      = _liquidityToShares(totalNoLiquidity);
+        state.reserveBalance     = totalYesLiquidity + totalNoLiquidity;
+        state.lastPulseIndex     = MathLibrary.INITIAL_INDEX;
+        state.lastTradeTimestamp = block.timestamp;
+        state.status             = MarketStatus.ACTIVE;
+
+        // ── 3. Event ──────────────────────────────────────────────────────────
+        emit PulseIndexUpdated(viewId, MathLibrary.INITIAL_INDEX);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Internal Math Helpers
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// @notice Converts a USDT liquidity amount to initial Position Shares.
+    /// @dev Single source of truth for the initial share conversion formula.
+    ///      Current formula: shares = liquidity * 2
+    ///      This corresponds to the initial Pulse Index of 5000 (50/50 price).
+    ///      Any future change to the initialization math MUST be made only here.
+    /// @param liquidity USDT amount in settlement token units.
+    /// @return shares   Corresponding number of Position Shares.
+    function _liquidityToShares(uint256 liquidity) internal pure returns (uint256 shares) {
+        return liquidity * 2;
     }
 }

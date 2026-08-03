@@ -158,7 +158,9 @@ describe("Stage 6.5 Security Fixes Regression", function () {
 
     describe("Fix 3: PERMANENT Market Lock Logic", function () {
         it("should revert when trying to lock a PERMANENT market", async function () {
-            await factory.connect(creator).createView(1, "uri", ethers.ZeroHash, 0, 0);
+            await token.mint(creator.address, ethers.parseEther("200"));
+            await token.connect(creator).approve(await factory.getAddress(), ethers.MaxUint256);
+            await factory.connect(creator).createView(1, "uri", ethers.ZeroHash, 0, 0, ethers.parseEther("50"), ethers.parseEther("50"));
             const viewId = 1;
             
             await expect(tradingEngine.lockMarket(viewId))
