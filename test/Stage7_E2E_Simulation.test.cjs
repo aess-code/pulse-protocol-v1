@@ -120,11 +120,11 @@ async function setupFixedView(ctx, endTimeOffset = 7200) {
   // Setup MockFactory
   await mockFactory.setExists(viewId, true);
   await mockFactory.setVault(viewId, await vault.getAddress());
-  const feeConfig = { totalBps: 100n, creatorBps: 50n, treasuryBps: 30n, teamBps: 20n };
+  const feeConfig = { totalBps: 100n, feeRecipientBps: 7000n, treasuryBps: 2000n, teamBps: 1000n };
 
   await mockFactory.setView(viewId, {
     viewId: viewId,
-    creator: creator.address,
+    feeRecipient: creator.address,
     viewType: 0, // FIXED
     metadataURI: "ipfs://test",
     metadataHash: ethers.keccak256(ethers.toUtf8Bytes("test")),
@@ -168,11 +168,11 @@ async function setupPermanentView(ctx) {
 
   await mockFactory.setExists(viewId, true);
   await mockFactory.setVault(viewId, await vault.getAddress());
-  const feeConfig = { totalBps: 100n, creatorBps: 50n, treasuryBps: 30n, teamBps: 20n };
+  const feeConfig = { totalBps: 100n, feeRecipientBps: 7000n, treasuryBps: 2000n, teamBps: 1000n };
 
   await mockFactory.setView(viewId, {
     viewId: viewId,
-    creator: creator.address,
+    feeRecipient: creator.address,
     viewType: 1, // PERMANENT
     metadataURI: "ipfs://permanent",
     metadataHash: ethers.keccak256(ethers.toUtf8Bytes("permanent")),
@@ -213,7 +213,7 @@ describe("Stage 7 — Part 7: End-to-End Full Flow Simulation", function () {
 
     it("A-1: Create FIXED view successfully", async function () {
       const view = await ctx.mockFactory.getView(viewId);
-      expect(view.creator).to.equal(ctx.creator.address);
+      expect(view.feeRecipient).to.equal(ctx.creator.address);
       expect(Number(view.viewType)).to.equal(0); // FIXED
     });
 

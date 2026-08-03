@@ -79,7 +79,7 @@ describe("TradingEngine — Invariant Test Suite (Fix ⑫)", function () {
         await mockFactory.setExists(VIEW_ID, true);
         await mockFactory.setVault(VIEW_ID, await mockVault.getAddress());
         await mockFactory.setView(VIEW_ID, {
-            viewId: VIEW_ID, creator: owner.address, viewType: 0,
+            viewId: VIEW_ID, feeRecipient: owner.address, viewType: 0,
             metadataURI: "", metadataHash: ethers.ZeroHash,
             createdAt: Math.floor(Date.now() / 1000),
             startTime: Math.floor(Date.now() / 1000),
@@ -87,7 +87,7 @@ describe("TradingEngine — Invariant Test Suite (Fix ⑫)", function () {
             vault: await mockVault.getAddress(),
             priceEngine: await mockPriceEngine.getAddress(),
             settlementManager: ethers.ZeroAddress,
-            feeConfig: { totalBps: 100, creatorBps: 5000, treasuryBps: 3000, teamBps: 2000 }
+            feeConfig: { totalBps: 100, feeRecipientBps: 7000, treasuryBps: 2000, teamBps: 1000 }
         });
 
         const TradingEngine = await ethers.getContractFactory("TradingEngine");

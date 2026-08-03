@@ -41,10 +41,10 @@ contract MockERC20 {
 }
 
 contract MockPulseFactory {
-    struct FeeConfig { uint256 totalBps; uint256 creatorBps; uint256 treasuryBps; uint256 teamBps; }
+    struct FeeConfig { uint256 totalBps; uint256 feeRecipientBps; uint256 treasuryBps; uint256 teamBps; }
     enum ViewType { FIXED, PERMANENT }
     struct ViewRecord {
-        uint256 viewId; address creator; ViewType viewType; string metadataURI;
+        uint256 viewId; address feeRecipient; ViewType viewType; string metadataURI;
         bytes32 metadataHash; uint256 createdAt; uint256 startTime; uint256 endTime;
         address vault; address priceEngine; address settlementManager; FeeConfig feeConfig;
     }
@@ -197,16 +197,17 @@ contract MockFeeManager {
     uint256 public lastRecordedFee;
     uint256 public totalRecordedFees;
 
-    // Per-view fee ledger (creator, treasury, team)
-    mapping(uint256 => uint256) public pendingCreatorFees;
+    // Per-view fee ledger (feeRecipient, treasury, team)
+    mapping(uint256 => uint256) public pendingFeeRecipientFees;
     mapping(uint256 => uint256) public pendingTreasuryFees;
     mapping(uint256 => uint256) public pendingTeamFees;
 
-    // Fee split constants (matching IFeeManager)
-    uint256 public constant CREATOR_BPS  = 50; // 50% of total fee
-    uint256 public constant TREASURY_BPS = 30; // 30% of total fee
-    uint256 public constant TEAM_BPS     = 20; // 20% of total fee
-    uint256 public constant TOTAL_BPS    = 100; // 100% = 1% of trade
+    // Fee split constants (matching IFeeManager — 10000-base BPS)
+    uint256 public constant BPS_DENOMINATOR     = 10_000;
+    uint256 public constant FEE_RECIPIENT_BPS   = 7_000; // 70% of total fee
+    uint256 public constant TREASURY_BPS        = 2_000; // 20% of total fee
+    uint256 public constant TEAM_BPS            = 1_000; // 10% of total fee
+    uint256 public constant TOTAL_FEE_BPS       = 100;   // 1% of trade value
 
     // Per-view vault registry (set by test setup)
     mapping(uint256 => address) public vaultForView;
@@ -215,14 +216,17 @@ contract MockFeeManager {
         vaultForView[viewId] = vault;
     }
 
-    function recordFee(uint256 viewId, address creator, uint256 amount) external {
+    function recordFee(uint256 viewId, address feeRecipient, uint256 amount) external {
         lastRecordedFee = amount;
         totalRecordedFees += amount;
-        // Split fee into creator/treasury/team (50/30/20 of total fee)
-        pendingCreatorFees[viewId]  += (amount * CREATOR_BPS)  / 100;
-        pendingTreasuryFees[viewId] += (amount * TREASURY_BPS) / 100;
-        pendingTeamFees[viewId]     += (amount * TEAM_BPS)     / 100;
-        (creator); // suppress unused warning
+        // Split fee into feeRecipient/treasury/team using 10000-base BPS
+        uint256 frFee      = (amount * FEE_RECIPIENT_BPS) / BPS_DENOMINATOR;
+        uint256 treasuryFee = (amount * TREASURY_BPS)     / BPS_DENOMINATOR;
+        uint256 teamFee     = amount - frFee - treasuryFee; // absorbs dust
+        pendingFeeRecipientFees[viewId] += frFee;
+        pendingTreasuryFees[viewId]     += treasuryFee;
+        pendingTeamFees[viewId]         += teamFee;
+        (feeRecipient); // suppress unused warning
         // Notify Vault of recorded fee (if vault is registered)
         address vault = vaultForView[viewId];
         if (vault != address(0)) {
@@ -230,12 +234,12 @@ contract MockFeeManager {
         }
     }
 
-    /// @notice Simulate creator claiming fees via Vault.releaseFee (correct architecture).
-    function claimCreatorFee(uint256 viewId, address vault, address creator) external {
-        uint256 amount = pendingCreatorFees[viewId];
+    /// @notice Simulate feeRecipient claiming fees via Vault.releaseFee (correct architecture).
+    function claimFeeRecipientFee(uint256 viewId, address vault, address feeRecipient) external {
+        uint256 amount = pendingFeeRecipientFees[viewId];
         require(amount > 0, "MockFeeManager: nothing to claim");
-        pendingCreatorFees[viewId] = 0; // CEI: zero ledger before interaction
-        MockMarketVault(vault).releaseFee(creator, amount);
+        pendingFeeRecipientFees[viewId] = 0; // CEI: zero ledger before interaction
+        MockMarketVault(vault).releaseFee(feeRecipient, amount);
     }
 
     /// @notice Simulate treasury claiming fees via Vault.releaseFee.

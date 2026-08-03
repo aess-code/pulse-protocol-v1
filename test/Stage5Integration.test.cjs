@@ -155,7 +155,7 @@ async function setupView(ctx, endTimeOffset = 7200) {
     await mockFactory.setVault(VIEW_ID, await vault.getAddress());
     await mockFactory.setView(VIEW_ID, {
         viewId: VIEW_ID,
-        creator: ctx.creator.address,
+        feeRecipient: ctx.creator.address,
         viewType: 0, // FIXED
         metadataURI: "ipfs://test",
         metadataHash: ethers.ZeroHash,
@@ -165,7 +165,7 @@ async function setupView(ctx, endTimeOffset = 7200) {
         vault: await vault.getAddress(),
         priceEngine: await ctx.priceEngine.getAddress(),
         settlementManager: await settlementManager.getAddress(),
-        feeConfig: { totalBps: 100, creatorBps: 50, treasuryBps: 30, teamBps: 20 }
+        feeConfig: { totalBps: 100, feeRecipientBps: 7000, treasuryBps: 2000, teamBps: 1000 }
     });
 
     // Approve TradingEngine for users

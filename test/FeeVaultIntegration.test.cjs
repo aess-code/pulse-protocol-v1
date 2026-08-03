@@ -67,7 +67,7 @@ describe("FeeVault Integration — Final Architecture Freeze", function () {
         await mockFactory.setExists(VIEW_ID, true);
         await mockFactory.setVault(VIEW_ID, await mockVault.getAddress());
         await mockFactory.setView(VIEW_ID, {
-            viewId: VIEW_ID, creator: creator.address, viewType: 0,
+            viewId: VIEW_ID, feeRecipient: creator.address, viewType: 0,
             metadataURI: "", metadataHash: ethers.ZeroHash,
             createdAt: Math.floor(Date.now() / 1000),
             startTime: Math.floor(Date.now() / 1000),
@@ -75,7 +75,7 @@ describe("FeeVault Integration — Final Architecture Freeze", function () {
             vault: await mockVault.getAddress(),
             priceEngine: await mockPriceEngine.getAddress(),
             settlementManager: ethers.ZeroAddress,
-            feeConfig: { totalBps: 100, creatorBps: 5000, treasuryBps: 3000, teamBps: 2000 }
+            feeConfig: { totalBps: 100, feeRecipientBps: 7000, treasuryBps: 3000, teamBps: 2000 }
         });
 
         // Mint and approve tokens for user
@@ -95,9 +95,9 @@ describe("FeeVault Integration — Final Architecture Freeze", function () {
             amountIn    = ethers.parseEther("100");
             fee         = amountIn / 100n;
             netAmount   = amountIn - fee;
-            creatorFee  = (fee * 50n) / 100n;
-            treasuryFee = (fee * 30n) / 100n;
-            teamFee     = (fee * 20n) / 100n;
+            creatorFee  = (fee * 7000n) / 10000n;
+            treasuryFee = (fee * 2000n) / 10000n;
+            teamFee     = fee - creatorFee - treasuryFee; // absorbs dust
 
             await mockPriceEngine.setQuoteBuy(ethers.parseEther("50"), 5100n, netAmount);
             await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn, 0);
@@ -115,9 +115,9 @@ describe("FeeVault Integration — Final Architecture Freeze", function () {
 
         it("Creator claim: tokens transferred, ledger zeroed, totalFeesReleased updated", async function () {
             const balanceBefore = await mockToken.balanceOf(creator.address);
-            await mockFeeManager.claimCreatorFee(VIEW_ID, await mockVault.getAddress(), creator.address);
+            await mockFeeManager.claimFeeRecipientFee(VIEW_ID, await mockVault.getAddress(), creator.address);
             expect(await mockToken.balanceOf(creator.address) - balanceBefore).to.equal(creatorFee);
-            expect(await mockFeeManager.pendingCreatorFees(VIEW_ID)).to.equal(0n);
+            expect(await mockFeeManager.pendingFeeRecipientFees(VIEW_ID)).to.equal(0n);
             expect(await mockVault.totalFeesReleased()).to.equal(creatorFee);
         });
 
@@ -134,7 +134,7 @@ describe("FeeVault Integration — Final Architecture Freeze", function () {
         });
 
         it("After all claims: VaultBalance == reserveBalance (all fees distributed)", async function () {
-            await mockFeeManager.claimCreatorFee(VIEW_ID, await mockVault.getAddress(), creator.address);
+            await mockFeeManager.claimFeeRecipientFee(VIEW_ID, await mockVault.getAddress(), creator.address);
             await mockFeeManager.claimTreasuryFee(VIEW_ID, await mockVault.getAddress(), treasury.address);
             await mockFeeManager.claimTeamFee(VIEW_ID, await mockVault.getAddress(), team.address);
             const vaultBalance = await mockVault.balance();
@@ -143,7 +143,7 @@ describe("FeeVault Integration — Final Architecture Freeze", function () {
         });
 
         it("totalFeesReleased == totalFeesRecorded after all claims", async function () {
-            await mockFeeManager.claimCreatorFee(VIEW_ID, await mockVault.getAddress(), creator.address);
+            await mockFeeManager.claimFeeRecipientFee(VIEW_ID, await mockVault.getAddress(), creator.address);
             await mockFeeManager.claimTreasuryFee(VIEW_ID, await mockVault.getAddress(), treasury.address);
             await mockFeeManager.claimTeamFee(VIEW_ID, await mockVault.getAddress(), team.address);
             expect(await mockVault.totalFeesReleased()).to.equal(await mockVault.totalFeesRecorded());
@@ -187,12 +187,12 @@ describe("FeeVault Integration — Final Architecture Freeze", function () {
             // Manually seed FeeManager ledger to a large value
             await mockFeeManager.recordFee(VIEW_ID, creator.address, ethers.parseEther("1"));
             // Now totalFeesRecorded = 2 tokens, but Vault only has 100 tokens.
-            // However, creator pending = 50% of 2 = 1 token, which is within quota.
+            // However, feeRecipient pending = 70% of 2 = 1.4 token, which is within quota.
             // To test over-quota: we need to bypass FeeManager and call releaseFee directly.
             // Since only FeeManager can call releaseFee, we test via a second recordFee
             // that inflates the ledger beyond what was deposited.
             // Simplest test: claim all fees, then try to claim again.
-            await mockFeeManager.claimCreatorFee(VIEW_ID, await mockVault.getAddress(), creator.address);
+            await mockFeeManager.claimFeeRecipientFee(VIEW_ID, await mockVault.getAddress(), creator.address);
             await mockFeeManager.claimTreasuryFee(VIEW_ID, await mockVault.getAddress(), treasury.address);
             await mockFeeManager.claimTeamFee(VIEW_ID, await mockVault.getAddress(), team.address);
 
@@ -202,7 +202,7 @@ describe("FeeVault Integration — Final Architecture Freeze", function () {
             // that notifies Vault, then try to release more than the new quota.
             // Actually the simplest test: try to claim after ledger is zeroed.
             await expect(
-                mockFeeManager.claimCreatorFee(VIEW_ID, await mockVault.getAddress(), creator.address)
+                mockFeeManager.claimFeeRecipientFee(VIEW_ID, await mockVault.getAddress(), creator.address)
             ).to.be.revertedWith("MockFeeManager: nothing to claim");
         });
 
@@ -212,9 +212,9 @@ describe("FeeVault Integration — Final Architecture Freeze", function () {
             await mockVault.setBalance(ethers.parseEther("10"));
             // Notify Vault of only 1 token recorded
             await mockFeeManager.recordFee(VIEW_ID, creator.address, ethers.parseEther("1"));
-            // totalFeesRecorded = 1 token. Creator pending = 0.5 token.
+            // totalFeesRecorded = 1 token. FeeRecipient pending = 70% = 0.7 token.
             // Claim creator (0.5 token) — should succeed
-            await mockFeeManager.claimCreatorFee(VIEW_ID, await mockVault.getAddress(), creator.address);
+            await mockFeeManager.claimFeeRecipientFee(VIEW_ID, await mockVault.getAddress(), creator.address);
             // totalFeesReleased = 0.5. available = 1 - 0.5 = 0.5.
             // Claim treasury (0.3 token) — should succeed
             await mockFeeManager.claimTreasuryFee(VIEW_ID, await mockVault.getAddress(), treasury.address);
@@ -261,7 +261,7 @@ describe("FeeVault Integration — Final Architecture Freeze", function () {
             const netAmount = amountIn - amountIn / 100n;
             await mockPriceEngine.setQuoteBuy(ethers.parseEther("50"), 5100n, netAmount);
             await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn, 0);
-            await mockFeeManager.claimCreatorFee(VIEW_ID, await mockVault.getAddress(), creator.address);
+            await mockFeeManager.claimFeeRecipientFee(VIEW_ID, await mockVault.getAddress(), creator.address);
             const vaultBalance = await mockVault.balance();
             const reserve = (await tradingEngine.getMarketState(VIEW_ID)).reserveBalance;
             expect(vaultBalance).to.be.gte(reserve);
@@ -272,7 +272,7 @@ describe("FeeVault Integration — Final Architecture Freeze", function () {
             const netAmount = amountIn - amountIn / 100n;
             await mockPriceEngine.setQuoteBuy(ethers.parseEther("50"), 5100n, netAmount);
             await tradingEngine.connect(user).buy(VIEW_ID, SIDE_FOR, amountIn, 0);
-            await mockFeeManager.claimCreatorFee(VIEW_ID, await mockVault.getAddress(), creator.address);
+            await mockFeeManager.claimFeeRecipientFee(VIEW_ID, await mockVault.getAddress(), creator.address);
             await mockFeeManager.claimTreasuryFee(VIEW_ID, await mockVault.getAddress(), treasury.address);
             const vaultBalance = await mockVault.balance();
             const totalFeesReleased = await mockVault.totalFeesReleased();
