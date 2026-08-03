@@ -210,7 +210,13 @@ interface ITradingEngine {
     ///        - sum(alloc.yesLiquidity) == totalYesLiquidity
     ///        - sum(alloc.noLiquidity)  == totalNoLiquidity
     ///
-    ///      Core does NOT validate application-layer rules (e.g. 50/50 split, minimum deposit requirements).
+    ///      Core enforces the Fair Launch Economic Invariant (Step 9):
+    ///        - totalYesLiquidity == totalNoLiquidity (enforced via TradingEngine__AllocationMismatch)
+    ///      This is a Core-level protocol invariant, NOT an application-layer rule.
+    ///      External modules MUST satisfy this invariant before calling initializeMarketState().
+    ///
+    ///      Core does NOT validate application-layer concerns such as minimum deposit requirements.
+    ///      Core does NOT understand Creator, GE, Builder, Launchpad, or any application concepts.
     ///
     /// @param viewId              The ViewID being initialised.
     /// @param totalYesLiquidity   Total YES-side USDT deposited.
