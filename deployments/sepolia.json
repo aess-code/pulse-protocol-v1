@@ -1,0 +1,64 @@
+{
+  "network": "sepolia",
+  "chainId": 11155111,
+  "frozenCoreCommit": "be73488",
+  "deployedAt": "2026-08-03",
+  "deployer": "0x0B2141b7F564bf0Be428188c9Ba0D5De4e41342B",
+  "contracts": {
+    "PriceEngine": {
+      "address": "0x70A91100f52D09b021ba28B607A534ED94e3986d",
+      "constructorArgs": []
+    },
+    "MarketVaultFactory": {
+      "address": "0x9F9d076cdE441EeCeD011CAF0F18f2a3a48274A8",
+      "constructorArgs": ["0x0e7592aF466DE837B700a97909E73cDF74E26D93"]
+    },
+    "TradingEngine": {
+      "address": "0xa6EE88f610140c9934153fC0d3549930a8f60B91",
+      "constructorArgs": [
+        "0x0e7592aF466DE837B700a97909E73cDF74E26D93",
+        "0x70A91100f52D09b021ba28B607A534ED94e3986d",
+        "0xE15FF88dB39740a7B9E46e69712F0Ad4a288dbe7"
+      ]
+    },
+    "FeeManager": {
+      "address": "0xE15FF88dB39740a7B9E46e69712F0Ad4a288dbe7",
+      "constructorArgs": [
+        "0xa6EE88f610140c9934153fC0d3549930a8f60B91",
+        "0x0e7592aF466DE837B700a97909E73cDF74E26D93",
+        "0x1b84e2581949cc26c5be97e701905881fd693201",
+        "0xbbc1f05d0478815776aaa2e1e13155030bb04bd3"
+      ]
+    },
+    "SettlementManager": {
+      "address": "0xB73abD77372FcD9E2Ca1D93d64A5d8163F24cC1e",
+      "constructorArgs": [
+        "0xa6EE88f610140c9934153fC0d3549930a8f60B91",
+        "0x0e7592aF466DE837B700a97909E73cDF74E26D93"
+      ]
+    },
+    "PulseFactory": {
+      "address": "0x0e7592aF466DE837B700a97909E73cDF74E26D93",
+      "constructorArgs": [
+        "0x9F9d076cdE441EeCeD011CAF0F18f2a3a48274A8",
+        "0xa6EE88f610140c9934153fC0d3549930a8f60B91",
+        "0xB73abD77372FcD9E2Ca1D93d64A5d8163F24cC1e",
+        "0xE15FF88dB39740a7B9E46e69712F0Ad4a288dbe7",
+        "0xDE92b9aF7FCd57ad660d7098C6a125D6594aA243",
+        "100000000"
+      ]
+    },
+    "MockUSDT": {
+      "address": "0xDE92b9aF7FCd57ad660d7098C6a125D6594aA243",
+      "constructorArgs": [],
+      "note": "Sepolia test token only. Not for mainnet."
+    }
+  },
+  "config": {
+    "treasury": "0x1b84e2581949cc26c5be97e701905881fd693201",
+    "team": "0xbbc1f05d0478815776aaa2e1e13155030bb04bd3",
+    "settlementToken": "0xDE92b9aF7FCd57ad660d7098C6a125D6594aA243",
+    "minInitialLiquidity": "100000000",
+    "minInitialLiquidityHuman": "100 MockUSDT (6 decimals)"
+  }
+}

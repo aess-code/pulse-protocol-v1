@@ -26,11 +26,6 @@ The Pulse Index is the core metric reflecting the current market probability est
 -   `INITIAL_INDEX` = `5000` (50/50 probability) [2].
 -   **Formula:** `index = floor(forSupply * 10000 / (forSupply + againstSupply))` [2].
 
-### Price Calculation
-Share prices are directly derived from the Pulse Index and are always strictly less than 1.0 [1].
--   **FOR Price:** `sharePrice = pulseIndex / 10000` [1].
--   **AGAINST Price:** `sharePrice = (10000 - pulseIndex) / 10000` [1].
-
 ---
 
 ## 3. Trading Economics
@@ -56,8 +51,8 @@ Trading fees are deducted from the gross transaction amount *before* the net amo
 
 ## 4. Settlement Economics
 
-### TWAP Settlement
-Settlement relies exclusively on a Time-Weighted Average Price (TWAP) calculated over a 30-minute window prior to market closure [4]. Spot prices are never used for settlement [5].
+### Time-Weighted Average Price (TWAP)
+Settlement relies exclusively on a Time-Weighted Average Price (TWAP) calculated over a 60-minute window prior to market closure [4]. Spot prices are never used for settlement [5].
 -   **Formula:** `finalTWAP = Σ(pulseIndex[i] * duration[i]) / Σ(duration[i])` [4].
 -   **Fallback Rules:**
     -   If no trades occur during the settlement window, the last recorded index before the window is used [4].
@@ -101,13 +96,14 @@ The Vault strictly enforces capital conservation:
 Fees are generated as a fixed percentage of the transaction volume during `buy` and `sell` operations [3]. The total fee rate is `100 bps` (1.00%) [3].
 
 ### Accounting
-The `FeeManager` is an accounting-only module [3]. When a trade occurs, the `TradingEngine` calls `FeeManager.recordFee()`, which updates the internal ledgers for the Creator, Treasury, and Team [3].
+The `FeeManager` is an accounting-only module [3]. When a trade occurs, the `TradingEngine` calls `FeeManager.recordFee()`, which updates the internal ledgers for the FeeRecipient, Treasury, and Team [3].
 
 ### Distribution
-Fees are distributed using a Pull-over-Push model [3]. The split is defined as:
--   **Creator:** 50% (`50 bps`) [3].
--   **Treasury:** 30% (`30 bps`) [3].
--   **Team:** 20% (`20 bps`) [3].
+Fees are distributed using a Pull-over-Push model [3]. The Core Protocol does not recognize application-layer concepts like Creator, Builder, GE, or DAO. It only recognizes the `FeeRecipient` abstraction. The split is defined as:
+-   **FeeRecipient:** 70% of total fee (`7000 bps` of total fee) [3].
+-   **Treasury:** 20% of total fee (`2000 bps` of total fee) [3].
+-   **Team:** 10% of total fee (`1000 bps` of total fee) [3].
+
 Dust from integer division is absorbed into the Team share [3]. Recipients must call `claimXxxFee()`, which zeroes their ledger and instructs the Vault to release the physical tokens [3].
 
 ---
@@ -120,6 +116,12 @@ Upon the creation of a View via the `PulseFactory`, specific economic parameters
 -   **SettlementManager Version** [9].
 -   **Collateral Token** [5].
 -   **EndTime** (Determines if the market is FIXED or PERMANENT) [9].
+
+### 50/50 Economic Invariant
+Initial allocation MUST satisfy: `totalYesLiquidity == totalNoLiquidity`. This invariant is strictly enforced by `TradingEngine.initializeMarketState()` at the protocol level.
+
+### Minimum Initial Liquidity
+`MIN_INITIAL_LIQUIDITY` is enforced by `PulseFactory` as an immutable deployment configuration. Market creation will revert if the initial liquidity does not satisfy this Core minimum requirement.
 
 *Note: For PERMANENT markets (`endTime == 0`), V1 prohibits automatic closure and defines no termination mechanism. They remain ACTIVE indefinitely and never enter Settlement [10].*
 
@@ -136,4 +138,4 @@ Upon the creation of a View via the `PulseFactory`, specific economic parameters
 [7] [docs/Stage5_Core_Completion_Report.md](/home/ubuntu/pulse-protocol-v1/docs/Stage5_Core_Completion_Report.md)  
 [8] [contracts/vault/MarketVault.sol](/home/ubuntu/pulse-protocol-v1/contracts/vault/MarketVault.sol)  
 [9] [contracts/interfaces/IPulseFactory.sol](/home/ubuntu/pulse-protocol-v1/contracts/interfaces/IPulseFactory.sol)  
-[10] [docs/Protocol_Constitution.md](/home/ubuntu/pulse-protocol-v1/docs/Protocol_Constitution.md)  
+[10] [docs/Protocol_Constitution.md](/home/ubuntu/pulse-protocol-v1/docs/Protocol_Constitution.md)

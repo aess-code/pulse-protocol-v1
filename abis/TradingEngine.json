@@ -1,0 +1,1037 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_factory",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "_priceEngine",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "_feeManager",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "inputs": [],
+    "name": "Math__DivisionByZero",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "Math__Overflow",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ReentrancyGuardReentrantCall",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      }
+    ],
+    "name": "SafeERC20FailedOperation",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "TradingEngine__AllocationMismatch",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      }
+    ],
+    "name": "TradingEngine__AlreadyInitialised",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      }
+    ],
+    "name": "TradingEngine__AlreadyLocked",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "TradingEngine__EmptyAllocation",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "currentTime",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "endTime",
+        "type": "uint256"
+      }
+    ],
+    "name": "TradingEngine__EndTimeNotReached",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "provided",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "minimum",
+        "type": "uint256"
+      }
+    ],
+    "name": "TradingEngine__InsufficientInitialLiquidity",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "side",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "balance",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "requested",
+        "type": "uint256"
+      }
+    ],
+    "name": "TradingEngine__InsufficientPosition",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "TradingEngine__InvalidAllocationUser",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      }
+    ],
+    "name": "TradingEngine__InvalidPriceEngineOutput",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "reserve",
+        "type": "uint256"
+      }
+    ],
+    "name": "TradingEngine__InvalidReserveBalance",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "TradingEngine__InvalidSide",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "enum ITradingEngine.MarketStatus",
+        "name": "current",
+        "type": "uint8"
+      }
+    ],
+    "name": "TradingEngine__InvalidStatus",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "enum ITradingEngine.MarketStatus",
+        "name": "current",
+        "type": "uint8"
+      }
+    ],
+    "name": "TradingEngine__MarketNotActive",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "TradingEngine__NotImplemented",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "actual",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "minimum",
+        "type": "uint256"
+      }
+    ],
+    "name": "TradingEngine__SlippageExceeded",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "TradingEngine__UnauthorisedFactory",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "TradingEngine__UnauthorisedSettlement",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      }
+    ],
+    "name": "TradingEngine__VaultNotFound",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      }
+    ],
+    "name": "TradingEngine__ViewNotFound",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "TradingEngine__ZeroAddress",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "TradingEngine__ZeroAmount",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "trader",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "side",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amountIn",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "sharesOut",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "newIndex",
+        "type": "uint256"
+      }
+    ],
+    "name": "Bought",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "finalTWAP",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "timestamp",
+        "type": "uint256"
+      }
+    ],
+    "name": "MarketLocked",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "enum ITradingEngine.MarketStatus",
+        "name": "oldStatus",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "enum ITradingEngine.MarketStatus",
+        "name": "newStatus",
+        "type": "uint8"
+      }
+    ],
+    "name": "MarketStatusChanged",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "newIndex",
+        "type": "uint256"
+      }
+    ],
+    "name": "PulseIndexUpdated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "trader",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "side",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "sharesIn",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amountOut",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "newIndex",
+        "type": "uint256"
+      }
+    ],
+    "name": "Sold",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "finalTWAP",
+        "type": "uint256"
+      }
+    ],
+    "name": "TWAPFinalised",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "pulseIndex",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "timestamp",
+        "type": "uint256"
+      }
+    ],
+    "name": "TWAPSnapshotRecorded",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "side",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amountIn",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "minSharesOut",
+        "type": "uint256"
+      }
+    ],
+    "name": "buy",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "sharesOut",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "factory",
+    "outputs": [
+      {
+        "internalType": "contract IPulseFactory",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "feeManager",
+    "outputs": [
+      {
+        "internalType": "contract IFeeManager",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getFinalTWAP",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "twap",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getMarketState",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "enum ITradingEngine.MarketStatus",
+            "name": "status",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint256",
+            "name": "reserveBalance",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "forSupply",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "againstSupply",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "lastPulseIndex",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "lastTradeTimestamp",
+            "type": "uint256"
+          }
+        ],
+        "internalType": "struct ITradingEngine.MarketState",
+        "name": "state",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getMarketStatus",
+    "outputs": [
+      {
+        "internalType": "enum ITradingEngine.MarketStatus",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      }
+    ],
+    "name": "getPosition",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "forShares",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "againstShares",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bool",
+            "name": "claimStatus",
+            "type": "bool"
+          },
+          {
+            "internalType": "uint256",
+            "name": "lastUpdate",
+            "type": "uint256"
+          }
+        ],
+        "internalType": "struct ITradingEngine.Position",
+        "name": "position",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getPulseIndex",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "pulseIndex",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getReserve",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "reserve",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getSupply",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "forSupply",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "againstSupply",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getVaultBalance",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "totalYesLiquidity",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "totalNoLiquidity",
+        "type": "uint256"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "user",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "yesLiquidity",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "noLiquidity",
+            "type": "uint256"
+          }
+        ],
+        "internalType": "struct IPulseFactory.LiquidityAllocation[]",
+        "name": "allocations",
+        "type": "tuple[]"
+      }
+    ],
+    "name": "initializeMarketState",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      }
+    ],
+    "name": "lockMarket",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      }
+    ],
+    "name": "markPositionClaimed",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "marketStates",
+    "outputs": [
+      {
+        "internalType": "enum ITradingEngine.MarketStatus",
+        "name": "status",
+        "type": "uint8"
+      },
+      {
+        "internalType": "uint256",
+        "name": "reserveBalance",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "forSupply",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "againstSupply",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "lastPulseIndex",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "lastTradeTimestamp",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "name": "positions",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "forShares",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "againstShares",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bool",
+        "name": "claimStatus",
+        "type": "bool"
+      },
+      {
+        "internalType": "uint256",
+        "name": "lastUpdate",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "priceEngine",
+    "outputs": [
+      {
+        "internalType": "contract IPriceEngine",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "side",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "sharesIn",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "minAmountOut",
+        "type": "uint256"
+      }
+    ],
+    "name": "sell",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "amountOut",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      }
+    ],
+    "name": "setStatusClaimable",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "viewId",
+        "type": "uint256"
+      }
+    ],
+    "name": "setStatusSettlement",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "twapStates",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "writtenSlotBitmap",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint64",
+        "name": "seedBlockNumber",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "endTimeBlock",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint256",
+        "name": "lastKnownPulseIndex",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tStop",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "finalTWAP",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bool",
+        "name": "locked",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]
