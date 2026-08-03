@@ -66,7 +66,8 @@ async function deployFixture() {
     const PulseFactory = await ethers.getContractFactory("PulseFactory");
     const factory = await PulseFactory.deploy(
         vaultFactoryAddr, tradingEngineAddr, settlementManagerAddr,
-        feeManagerAddr, await token.getAddress()
+        feeManagerAddr, await token.getAddress(),
+        ethers.parseEther("100") // MIN_INITIAL_LIQUIDITY
     );
 
     const MarketVaultFactory = await ethers.getContractFactory("MarketVaultFactory");
@@ -97,9 +98,14 @@ async function createView(ctx, durationSeconds = 3 * 3600) {
     const now = await currentTime();
     const startTime = now;
     const endTime   = now + durationSeconds;
+    // Mint and approve tokens for creator if needed
+    await ctx.token.mint(ctx.creator.address, ethers.parseEther("200"));
+    await ctx.token.connect(ctx.creator).approve(await ctx.factory.getAddress(), ethers.MaxUint256);
     const tx = await ctx.factory.connect(ctx.creator).createView(
         0, "ipfs://test", ethers.keccak256(ethers.toUtf8Bytes("test")),
-        startTime, endTime
+        startTime, endTime,
+        ethers.parseEther("50"), // initialYesLiquidity
+        ethers.parseEther("50")  // initialNoLiquidity
     );
     const receipt = await tx.wait();
     const event = receipt.logs.find(l => {

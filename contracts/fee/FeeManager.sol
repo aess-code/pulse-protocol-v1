@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import { IFeeManager }   from "../interfaces/IFeeManager.sol";
-import { IPulseFactory } from "../interfaces/IPulseFactory.sol";
-import { IMarketVault }  from "../interfaces/IMarketVault.sol";
+import { IFeeManager }     from "../interfaces/IFeeManager.sol";
+import { IPulseFactory }   from "../interfaces/IPulseFactory.sol";
+import { IMarketVault }    from "../interfaces/IMarketVault.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @title FeeManager
@@ -21,41 +21,50 @@ import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.s
 ///          → Physical fee tokens remain in MarketVault
 ///
 ///      Claim Flow (Pull-over-Push):
-///        Creator/Treasury/Team calls claimXxxFee()
+///        FeeRecipient/Treasury/Team calls claimXxxFee()
 ///          → FeeManager zeroes internal ledger (CEI: Effect before Interaction)
 ///          → FeeManager calls MarketVault.releaseFee() (Vault transfers to recipient)
 ///
-///      Fee Split (fixed per SSOT, immutable):
-///        Total:    1.00% (100 bps)
-///        Creator:  0.50% (50% of total fee)
-///        Treasury: 0.30% (30% of total fee)
-///        Team:     0.20% (20% of total fee)
+///      Fee Split (fixed per Architecture Constitution, immutable):
+///        Total:         1.00% of trade value (100 bps of trade value)
+///        FeeRecipient:  70% of total fee (7000 bps of total fee)
+///        Treasury:      20% of total fee (2000 bps of total fee)
+///        Team:          10% of total fee (1000 bps of total fee)
+///
+///      BPS Denominator: 10000 (all share constants are expressed in 10000-base BPS)
 ///
 ///      ── Security Properties ───────────────────────────────────────────────
 ///      - Only authorised TradingEngine may call recordFee()
-///      - Only the View's Creator may call claimCreatorFee()
+///      - Only the View's FeeRecipient may call claimFeeRecipientFee()
 ///      - Only the configured treasury address may call claimTreasuryFee()
 ///      - Only the configured team address may call claimTeamFee()
 ///      - CEI pattern prevents reentrancy in all claim functions
 ///      - Vault-layer quota protection prevents over-release even if FeeManager is buggy
+///      - FeeRecipient is resolved from the immutable Factory registry; cannot be spoofed
 /// @dev Stage 7 RC Hardening: Added ReentrancyGuard as defense-in-depth.
 contract FeeManager is IFeeManager, ReentrancyGuard {
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Constants — Fee Split (Fixed per SSOT)
+    // Constants — Fee Split (Fixed per Architecture Constitution)
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// @notice Total fee in basis points. Fixed per protocol: 1.00%.
-    uint256 public constant TOTAL_FEE_BPS      = 100;
+    /// @notice BPS denominator. All share constants are expressed in 10000-base BPS.
+    uint256 public constant BPS_DENOMINATOR = 10_000;
 
-    /// @notice Creator share: 50% of total fee (0.50% of trade value).
-    uint256 public constant CREATOR_SHARE_BPS  = 50;
+    /// @notice Total trade fee in basis points. Fixed per protocol: 1.00% of trade value.
+    /// @dev This is the gross fee deducted from each trade. It is NOT used in the internal
+    ///      split calculation (which uses the 10000-base share constants below).
+    uint256 public constant TOTAL_FEE_BPS = 100;
 
-    /// @notice Treasury share: 30% of total fee (0.30% of trade value).
-    uint256 public constant TREASURY_SHARE_BPS = 30;
+    /// @notice FeeRecipient share: 70% of total fee (7000 bps of 10000).
+    uint256 public constant FEE_RECIPIENT_SHARE_BPS = 7_000;
 
-    /// @notice Team share: 20% of total fee (0.20% of trade value).
-    uint256 public constant TEAM_SHARE_BPS     = 20;
+    /// @notice Treasury share: 20% of total fee (2000 bps of 10000).
+    uint256 public constant TREASURY_SHARE_BPS = 2_000;
+
+    /// @notice Team share: 10% of total fee (1000 bps of 10000).
+    /// @dev Team share is computed as the remainder to absorb integer division dust.
+    uint256 public constant TEAM_SHARE_BPS = 1_000;
 
     // ─────────────────────────────────────────────────────────────────────────
     // Immutable Dependencies
@@ -64,23 +73,23 @@ contract FeeManager is IFeeManager, ReentrancyGuard {
     /// @notice The authorised TradingEngine. Only this address may call recordFee().
     address public immutable authorizedTradingEngine;
 
-    /// @notice The PulseFactory registry. Used to look up Vault and Creator addresses.
+    /// @notice The PulseFactory registry. Used to look up Vault and FeeRecipient addresses.
     IPulseFactory public immutable factory;
 
-    /// @notice The protocol treasury address. Receives 30% of all fees.
+    /// @notice The protocol treasury address. Receives 20% of all fees.
     address public immutable treasury;
 
-    /// @notice The protocol team address. Receives 20% of all fees.
+    /// @notice The protocol team address. Receives 10% of all fees.
     address public immutable team;
 
     // ─────────────────────────────────────────────────────────────────────────
     // State Variables
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// @notice Pending creator fee balance per (viewId, creator).
-    /// @dev Keyed by viewId → creator address → pending amount.
-    ///      A creator may have positions in multiple Views.
-    mapping(uint256 => mapping(address => uint256)) private _pendingCreatorFees;
+    /// @notice Pending feeRecipient fee balance per (viewId, feeRecipient).
+    /// @dev Keyed by viewId → feeRecipient address → pending amount.
+    ///      A single feeRecipient address may be associated with multiple Views.
+    mapping(uint256 => mapping(address => uint256)) private _pendingFeeRecipientFees;
 
     /// @notice Pending treasury fee balance per viewId.
     mapping(uint256 => uint256) private _pendingTreasuryFees;
@@ -129,30 +138,33 @@ contract FeeManager is IFeeManager, ReentrancyGuard {
 
     /// @inheritdoc IFeeManager
     /// @dev Only callable by the authorised TradingEngine.
-    ///      Splits totalFee into creator/treasury/team shares using integer division.
-    ///      Dust from rounding is absorbed into the team share (last calculated as remainder).
+    ///
+    ///      Split formula (10000-base BPS):
+    ///        feeRecipientFee = totalFee * 7000 / 10000
+    ///        treasuryFee     = totalFee * 2000 / 10000
+    ///        teamFee         = totalFee - feeRecipientFee - treasuryFee  (absorbs dust)
     ///
     ///      After updating internal ledgers, notifies the Vault of the new fee obligation
     ///      so the Vault can independently enforce the release quota.
     function recordFee(
         uint256 viewId,
-        address creator,
+        address feeRecipient,
         uint256 totalFee
     ) external override onlyTradingEngine {
-        if (totalFee == 0)          revert FeeManager__ZeroFee();
-        if (creator  == address(0)) revert FeeManager__InvalidFeeRecipient();
+        if (totalFee == 0)             revert FeeManager__ZeroFee();
+        if (feeRecipient == address(0)) revert FeeManager__InvalidFeeRecipient();
 
-        // Split fee: creator 50%, treasury 30%, team absorbs remainder (dust)
-        uint256 creatorFee  = (totalFee * CREATOR_SHARE_BPS)  / 100;
-        uint256 treasuryFee = (totalFee * TREASURY_SHARE_BPS) / 100;
-        uint256 teamFee     = totalFee - creatorFee - treasuryFee;
+        // Split fee using 10000-base BPS denominator
+        uint256 feeRecipientFee = (totalFee * FEE_RECIPIENT_SHARE_BPS) / BPS_DENOMINATOR;
+        uint256 treasuryFee     = (totalFee * TREASURY_SHARE_BPS)      / BPS_DENOMINATOR;
+        uint256 teamFee         = totalFee - feeRecipientFee - treasuryFee; // absorbs dust
 
         // Update internal ledgers
-        _pendingCreatorFees[viewId][creator] += creatorFee;
-        _pendingTreasuryFees[viewId]         += treasuryFee;
-        _pendingTeamFees[viewId]             += teamFee;
+        _pendingFeeRecipientFees[viewId][feeRecipient] += feeRecipientFee;
+        _pendingTreasuryFees[viewId]                   += treasuryFee;
+        _pendingTeamFees[viewId]                       += teamFee;
 
-        emit FeeRecorded(viewId, creator, totalFee, creatorFee, treasuryFee, teamFee);
+        emit FeeRecorded(viewId, feeRecipient, totalFee, feeRecipientFee, treasuryFee, teamFee);
 
         // Notify Vault of the new fee obligation (enables Vault-layer quota protection).
         address vaultAddr = factory.getVault(viewId);
@@ -161,13 +173,13 @@ contract FeeManager is IFeeManager, ReentrancyGuard {
     }
 
     /// @inheritdoc IFeeManager
-    /// @dev Only the Creator of the View may claim their fee.
-    ///      The Creator address is read from the Factory registry (immutable per View).
+    /// @dev Only the FeeRecipient of the View may claim their fee.
+    ///      The FeeRecipient address is resolved from the immutable Factory registry.
     ///
     ///      CEI Pattern:
-    ///        1. CHECK  — caller is the View's Creator, pending > 0
+    ///        1. CHECK  — caller is the View's FeeRecipient, pending > 0
     ///        2. EFFECT — zero the pending balance (prevents reentrancy double-claim)
-    ///        3. INTERACT — call Vault.releaseFee() to transfer tokens to creator
+    ///        3. INTERACT — call Vault.releaseFee() to transfer tokens to feeRecipient
     function claimFeeRecipientFee(uint256 viewId) external override nonReentrant {
         // Resolve feeRecipient from Factory (immutable per View)
         IPulseFactory.ViewRecord memory view_ = factory.getView(viewId);
@@ -176,11 +188,11 @@ contract FeeManager is IFeeManager, ReentrancyGuard {
         // Only the View's FeeRecipient may claim
         if (msg.sender != feeRecipient) revert FeeManager__UnauthorisedCaller();
 
-        uint256 amount = _pendingCreatorFees[viewId][feeRecipient];
+        uint256 amount = _pendingFeeRecipientFees[viewId][feeRecipient];
         if (amount == 0) revert FeeManager__NothingToClaim();
 
         // CEI: zero ledger before external interaction
-        _pendingCreatorFees[viewId][feeRecipient] = 0;
+        _pendingFeeRecipientFees[viewId][feeRecipient] = 0;
 
         // Release from Vault
         IMarketVault(view_.vault).releaseFee(feeRecipient, amount);
@@ -243,7 +255,7 @@ contract FeeManager is IFeeManager, ReentrancyGuard {
         override
         returns (uint256)
     {
-        return _pendingCreatorFees[viewId][feeRecipient];
+        return _pendingFeeRecipientFees[viewId][feeRecipient];
     }
 
     /// @inheritdoc IFeeManager
@@ -267,17 +279,22 @@ contract FeeManager is IFeeManager, ReentrancyGuard {
     }
 
     /// @inheritdoc IFeeManager
+    /// @dev Returns the fee split configuration in 10000-base BPS.
+    ///      feeRecipientBps: 7000 (70% of total fee)
+    ///      treasuryBps:     2000 (20% of total fee)
+    ///      teamBps:         1000 (10% of total fee)
+    ///      totalBps:        100  (1.00% of trade value — gross trade fee)
     function feeConfig()
         external
         pure
         override
         returns (
-            uint256 creatorBps,
+            uint256 feeRecipientBps,
             uint256 treasuryBps,
             uint256 teamBps,
             uint256 totalBps
         )
     {
-        return (CREATOR_SHARE_BPS, TREASURY_SHARE_BPS, TEAM_SHARE_BPS, TOTAL_FEE_BPS);
+        return (FEE_RECIPIENT_SHARE_BPS, TREASURY_SHARE_BPS, TEAM_SHARE_BPS, TOTAL_FEE_BPS);
     }
 }

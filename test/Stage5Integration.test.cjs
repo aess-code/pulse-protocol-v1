@@ -430,9 +430,9 @@ describe("Stage 5 — Full Integration & Security Tests", function () {
             ).to.be.revertedWithCustomError(ctx.feeManager, "FeeManager__UnauthorisedCaller");
         });
 
-        it("Should revert claimCreatorFee if caller is not the creator", async function () {
+        it("Should revert claimFeeRecipientFee if caller is not the feeRecipient", async function () {
             await expect(
-                ctx.feeManager.connect(ctx.attacker).claimCreatorFee(1)
+                ctx.feeManager.connect(ctx.attacker).claimFeeRecipientFee(1)
             ).to.be.revertedWithCustomError(ctx.feeManager, "FeeManager__UnauthorisedCaller");
         });
 
@@ -449,10 +449,10 @@ describe("Stage 5 — Full Integration & Security Tests", function () {
         });
 
         it("feeConfig returns correct split", async function () {
-            const [creatorBps, treasuryBps, teamBps, totalBps] = await ctx.feeManager.feeConfig();
-            expect(creatorBps).to.equal(50n);
-            expect(treasuryBps).to.equal(30n);
-            expect(teamBps).to.equal(20n);
+            const [feeRecipientBps, treasuryBps, teamBps, totalBps] = await ctx.feeManager.feeConfig();
+            expect(feeRecipientBps).to.equal(7000n);
+            expect(treasuryBps).to.equal(2000n);
+            expect(teamBps).to.equal(1000n);
             expect(totalBps).to.equal(100n);
         });
     });

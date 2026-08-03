@@ -42,7 +42,8 @@ describe("Stage 6.5 Security Fixes Regression", function () {
             tradingEngineAddr,
             settlementManagerAddr,
             feeManagerAddr,
-            await token.getAddress()
+            await token.getAddress(),
+            ethers.parseEther("100") // MIN_INITIAL_LIQUIDITY: 100 USDT (18 decimals for MockUSDT)
         );
         expect(await factory.getAddress()).to.equal(factoryAddr);
 
@@ -86,17 +87,23 @@ describe("Stage 6.5 Security Fixes Regression", function () {
             const startTime = Math.floor(Date.now() / 1000) + 3600;
             const endTime = startTime + 3600 + 86400; // startTime + 1 day
 
+            // Mint and approve tokens for creator
+            await token.mint(creator.address, ethers.parseEther("200"));
+            await token.connect(creator).approve(await factory.getAddress(), ethers.MaxUint256);
+
             await expect(factory.connect(creator).createView(
                 0, // FIXED
                 metadataURI,
                 metadataHash,
                 startTime,
-                endTime
+                endTime,
+                ethers.parseEther("50"), // initialYesLiquidity
+                ethers.parseEther("50")  // initialNoLiquidity
             )).to.emit(factory, "ViewCreated");
 
             const viewId = 1;
             const view = await factory.getView(viewId);
-            expect(view.creator).to.equal(creator.address);
+            expect(view.feeRecipient).to.equal(creator.address);
             expect(view.vault).to.not.equal(ethers.ZeroAddress);
 
             const vault = await ethers.getContractAt("MarketVault", view.vault);
@@ -109,7 +116,9 @@ describe("Stage 6.5 Security Fixes Regression", function () {
         beforeEach(async function () {
             const startTime = Math.floor(Date.now() / 1000);
             const endTime = startTime + 7200;
-            await factory.connect(creator).createView(0, "uri", ethers.ZeroHash, startTime, endTime);
+            await token.mint(creator.address, ethers.parseEther("200"));
+            await token.connect(creator).approve(await factory.getAddress(), ethers.MaxUint256);
+            await factory.connect(creator).createView(0, "uri", ethers.ZeroHash, startTime, endTime, ethers.parseEther("50"), ethers.parseEther("50"));
             viewId = 1;
             await token.mint(userA.address, ethers.parseEther("1000"));
             await token.connect(userA).approve(await tradingEngine.getAddress(), ethers.MaxUint256);
@@ -159,7 +168,9 @@ describe("Stage 6.5 Security Fixes Regression", function () {
         it("should allow locking a FIXED market after endTime", async function () {
             const startTime = Math.floor(Date.now() / 1000);
             const endTime = startTime + 5400; // Stage 6.6: min 90 min
-            await factory.connect(creator).createView(0, "uri", ethers.ZeroHash, startTime, endTime);
+            await token.mint(creator.address, ethers.parseEther("200"));
+            await token.connect(creator).approve(await factory.getAddress(), ethers.MaxUint256);
+            await factory.connect(creator).createView(0, "uri", ethers.ZeroHash, startTime, endTime, ethers.parseEther("50"), ethers.parseEther("50"));
             const viewId = 1;
 
             await ethers.provider.send("evm_increaseTime", [5401]);
@@ -174,7 +185,9 @@ describe("Stage 6.5 Security Fixes Regression", function () {
         it("should store the correct PriceEngine address in ViewRecord", async function () {
             const startTime = Math.floor(Date.now() / 1000);
             const endTime = startTime + 86400;
-            await factory.connect(creator).createView(0, "uri", ethers.ZeroHash, startTime, endTime);
+            await token.mint(creator.address, ethers.parseEther("200"));
+            await token.connect(creator).approve(await factory.getAddress(), ethers.MaxUint256);
+            await factory.connect(creator).createView(0, "uri", ethers.ZeroHash, startTime, endTime, ethers.parseEther("50"), ethers.parseEther("50"));
             const view = await factory.getView(1);
             expect(view.priceEngine).to.equal(await priceEngine.getAddress());
         });
