@@ -210,22 +210,29 @@ describe("Step 5 — Core Integration Boundary Tests", function () {
             expect(posB.forShares).to.equal(ethers.parseEther("300")); // 150 * 2
         });
 
-        it("createViewWithInitialAllocation() supports duplicate addresses (+=)", async function () {
+        it("createViewWithInitialAllocation() supports duplicate addresses (+=) with 50/50", async function () {
+            // 50/50 invariant: each alloc must result in equal YES and NO totals
             const allocs = [
-                { user: ctx.userA.address, yesLiquidity: ethers.parseEther("100"), noLiquidity: 0n },
-                { user: ctx.userA.address, yesLiquidity: ethers.parseEther("100"), noLiquidity: 0n }
+                { user: ctx.userA.address, yesLiquidity: ethers.parseEther("100"), noLiquidity: ethers.parseEther("100") },
+                { user: ctx.userA.address, yesLiquidity: ethers.parseEther("100"), noLiquidity: ethers.parseEther("100") }
             ];
             await ctx.token.connect(ctx.owner).approve(await ctx.factory.getAddress(), ethers.MaxUint256);
-            await ctx.factory.connect(ctx.owner).createViewWithInitialAllocation(
+            const tx = await ctx.factory.connect(ctx.owner).createViewWithInitialAllocation(
                 0, "ipfs://test", ethers.ZeroHash,
                 0, (await currentTime()) + 86400,
                 ctx.feeRecipient.address,
                 ethers.parseEther("200"),
-                0n,
+                ethers.parseEther("200"),
                 allocs
             );
-            const pos = await ctx.tradingEngine.getPosition(1, ctx.userA.address);
+            const receipt = await tx.wait();
+            const event = receipt.logs.find(l => {
+                try { return ctx.factory.interface.parseLog(l)?.name === "ViewCreated"; } catch { return false; }
+            });
+            const viewId = ctx.factory.interface.parseLog(event).args.viewId;
+            const pos = await ctx.tradingEngine.getPosition(viewId, ctx.userA.address);
             expect(pos.forShares).to.equal(ethers.parseEther("400")); // (100+100) * 2
+            expect(pos.againstShares).to.equal(ethers.parseEther("400")); // (100+100) * 2
         });
 
         it("createViewWithInitialAllocation() enforces fund conservation", async function () {

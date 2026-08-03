@@ -512,6 +512,11 @@ contract TradingEngine is ITradingEngine, ReentrancyGuard {
         // Allocation array must not be empty
         if (allocations.length == 0) revert TradingEngine__EmptyAllocation();
 
+        // Fair Launch Economic Invariant: YES and NO liquidity must be equal.
+        // This ensures the initial Pulse Index is always 5000 (neutral Fair Launch).
+        // Enforced at the Core level to protect against any caller, including third-party modules.
+        if (totalYesLiquidity != totalNoLiquidity) revert TradingEngine__AllocationMismatch();
+
         // ── Allocation Validation Pass ────────────────────────────────────────
         // Single-pass: validate each entry and accumulate liquidity sums.
         // Duplicate user addresses are allowed; += handles them correctly.
